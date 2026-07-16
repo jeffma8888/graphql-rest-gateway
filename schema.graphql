@@ -1,0 +1,74 @@
+# ============================================================================
+# schema.graphql -- SOURCE OF TRUTH for the graph.
+#
+# This SDL is written first; the TypeScript resolver types in
+# src/generated/graphql.ts are generated FROM this file (see codegen.ts).
+# The gateway fronts a REST backend exposing authors -> books -> reviews.
+# ============================================================================
+
+type Query {
+  """
+  Relay-style cursor-paginated list of authors.
+  `first` bounds the page size; `after` is an opaque cursor from a previous page.
+  """
+  authors(first: Int = 10, after: String): AuthorConnection!
+
+  "Fetch a single author by id (batched via DataLoader under the hood)."
+  author(id: ID!): Author
+
+  "Fetch a single book by id (batched via DataLoader under the hood)."
+  book(id: ID!): Book
+}
+
+type Author {
+  id: ID!
+  name: String!
+  bio: String!
+  "All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors."
+  books: [Book!]!
+}
+
+type Book {
+  id: ID!
+  title: String!
+  year: Int!
+  "The author of this book (batched by author id)."
+  author: Author!
+  "All reviews for this book. Batched by book id -> one downstream call for a whole page of books."
+  reviews: [Review!]!
+}
+
+type Review {
+  id: ID!
+  rating: Int!
+  body: String!
+  """
+  Reviewer display name. Demonstrates auth-context threading: redacted to
+  "REDACTED" unless the request carries a valid bearer token.
+  """
+  reviewer: String!
+  "The book this review is for (batched by book id)."
+  book: Book!
+}
+
+# --- Relay connection types (cursor pagination) ---------------------------
+
+type AuthorConnection {
+  edges: [AuthorEdge!]!
+  pageInfo: PageInfo!
+  "Total number of authors available across all pages."
+  totalCount: Int!
+}
+
+type AuthorEdge {
+  node: Author!
+  "Opaque cursor for this edge; pass as `after` to page forward."
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}

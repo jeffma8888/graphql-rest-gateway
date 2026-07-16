@@ -1,0 +1,52 @@
+{
+  "name": "graphql-rest-gateway",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.",
+  "keywords": [
+    "graphql",
+    "dataloader",
+    "n-plus-1",
+    "typescript",
+    "graphql-yoga",
+    "rest",
+    "gateway",
+    "relay",
+    "pagination"
+  ],
+  "license": "MIT",
+  "author": "jeffma8888",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "backend": "tsx src/rest-backend/standalone.ts",
+    "benchmark": "tsx benchmark/benchmark.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@graphql-tools/schema": "^10.0.4",
+    "dataloader": "^2.2.2",
+    "fastify": "^4.28.1",
+    "graphql": "^16.9.0",
+    "graphql-yoga": "^5.7.0"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^5.0.2",
+    "@graphql-codegen/typescript": "^4.0.9",
+    "@graphql-codegen/typescript-resolvers": "^4.2.1",
+    "@types/node": "^22.5.4",
+    "@vitest/coverage-istanbul": "^2.1.9",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

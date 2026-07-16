@@ -1,0 +1,68 @@
+import { GraphQLError } from 'graphql';
+import { RestClient } from './datasources/rest-client';
+import { buildDataSources, type DataSources } from './datasources';
+import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders';
+import { buildServices, type Services } from './services';
+
+/**
+ * Request-scoped GraphQL context.
+ *
+ * Everything here is rebuilt PER REQUEST. That is deliberate: the DataLoaders
+ * carry a per-request cache, so they must not outlive the request. `restClient`
+ * is exposed so tests and the benchmark can read the downstream call counter.
+ */
+
+export interface AuthContext {
+  userId: string | null;
+  scopes: string[];
+}
+
+export interface GatewayContext {
+  auth: AuthContext;
+  services: Services;
+  loaders: Loaders;
+  datasources: DataSources;
+  restClient: RestClient;
+}
+
+export interface CreateContextOptions {
+  restBaseUrl?: string;
+  /** Inject a pre-built client (tests/benchmark read its stats afterwards). */
+  restClient?: RestClient;
+  authorization?: string | null;
+  loaderOptions?: LoaderOptions;
+}
+
+/**
+ * Stub bearer-token parsing. A real gateway verifies a signed JWT and derives
+ * identity + scopes; here we accept a `user:<id>:<scope,scope>` token to
+ * demonstrate the context-threading pattern without pulling in an auth vendor.
+ */
+export function parseAuth(authorization?: string | null): AuthContext {
+  if (!authorization) return { userId: null, scopes: [] };
+  const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
+  if (!match?.[1]) return { userId: null, scopes: [] };
+
+  const parts = match[1].split(':');
+  if (parts[0] === 'user' && parts[1]) {
+    return { userId: parts[1], scopes: parts[2] ? parts[2].split(',').filter(Boolean) : [] };
+  }
+  return { userId: null, scopes: [] };
+}
+
+export function createContext(opts: CreateContextOptions): GatewayContext {
+  const restClient = opts.restClient ?? new RestClient(opts.restBaseUrl ?? 'http://127.0.0.1:4001');
+  const datasources = buildDataSources(restClient);
+  const loaders = buildLoaders(datasources, opts.loaderOptions ?? BATCHED);
+  const services = buildServices(datasources, loaders);
+  const auth = parseAuth(opts.authorization);
+  return { auth, services, loaders, datasources, restClient };
+}
+
+/** Guard helper for resolvers that require an authenticated caller. */
+export function requireAuth(ctx: GatewayContext): AuthContext {
+  if (!ctx.auth.userId) {
+    throw new GraphQLError('Unauthenticated', { extensions: { code: 'UNAUTHENTICATED' } });
+  }
+  return ctx.auth;
+}
