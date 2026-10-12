@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "declaration": false,
+    "declaration": true,
     "sourceMap": true
   },
   "include": ["src", "benchmark", "test", "codegen.ts"],

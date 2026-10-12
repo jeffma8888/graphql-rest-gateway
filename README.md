@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-30%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~82%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -85,6 +85,30 @@ Other entry points:
 | `npm run build` | Type-check + emit to `dist/` |
 
 > `reviewer` is redacted to `REDACTED` unless the request carries a valid bearer token. Send header `Authorization: Bearer user:42` (see [Auth context](#auth-context)) to reveal it.
+
+### Programmatic usage
+
+The package exports a library entry point so you can embed the gateway in your own server:
+
+```ts
+import { createGateway, buildBackend } from 'graphql-rest-gateway';
+
+// Boot the bundled REST backend (or point to your own)
+const { app } = buildBackend({ latencyMs: 0 });
+const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+// Create a GraphQL Yoga instance
+const yoga = createGateway({ restBaseUrl: baseUrl });
+
+// Use yoga.fetch() directly or mount on any Node HTTP server
+const res = await yoga.fetch('http://localhost/graphql', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ query: '{ authors(first: 5) { edges { node { id name } } } }' }),
+});
+```
+
+Exported symbols: `createGateway`, `GatewayOptions`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `schema`.
 
 ---
 
@@ -186,10 +210,11 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 29 tests across 6 files (Vitest), all green:
+`npm test` — 30 tests across 7 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
+- **Library entry** — imports from the barrel (`lib-entry.test.ts`), boots a gateway against the bundled backend, and asserts a successful query round-trip.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
 ```ts

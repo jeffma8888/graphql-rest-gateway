@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "private": false,
   "type": "module",
+  "main": "dist/src/lib.js",
+  "types": "dist/src/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/lib.d.ts",
+      "import": "./dist/src/lib.js"
+    }
+  },
   "description": "Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.",
   "keywords": [
     "graphql",
