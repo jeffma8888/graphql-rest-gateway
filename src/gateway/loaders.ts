@@ -64,6 +64,7 @@ export function buildLoaders(ds: DataSources, options: LoaderOptions = BATCHED):
 
   const booksByAuthorId = new DataLoader<string, BookRow[]>(async (authorIds) => {
     const rows = await ds.book.booksByAuthorIds(authorIds);
+    for (const book of rows) bookById.prime(book.id, book);
     return groupBy(authorIds, rows, (b) => b.authorId);
   }, options);
 

@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-15
+    lenses: unknown
+    - Candidate A1 -- Dead-export sweep: remove requireAuth, estimateComplexity, and RestClient.resetStats
+    - Candidate A2 -- Remove BackendStats tracking and /__stats endpoints from the REST backend
+    - Candidate A3 -- Replace hand-rolled pad/padStart with String.prototype builtins in benchmark
+    - Candidate B1 -- Cross-loader priming to eliminate redundant back-edge fetches
+    - Candidate B2 -- Parsed-operation document cache to amortize parse and validation cost
+    - Candidate B3 -- Index-based lookups in REST backend batch endpoints
+    winner: B1
+    ship: pending (not yet decided)
   iter-03
     lenses: unknown
     - Candidate A1 — Remove uncalled exports: requireAuth, estimateComplexity, resetStats
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Response cache for repeated unauthenticated queries
     - Candidate B3 — Per-phase cost breakdown in benchmark with regression thresholds
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED d14ab47
   iter-02
     lenses: unknown
     - Candidate A1 — GraphQL config file for editor/codegen schema discovery
@@ -31,4 +41,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-3 scouted iterations
+4 scouted iterations

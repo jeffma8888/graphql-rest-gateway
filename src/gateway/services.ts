@@ -26,6 +26,7 @@ export class AuthorService {
     const limit = Math.min(Math.max(first, 0), MAX_PAGE_SIZE);
     const offset = offsetFromCursor(after);
     const { items, total } = await this.ds.author.listAuthors(offset, limit);
+    for (const author of items) this.loaders.authorById.prime(author.id, author);
     return buildConnection(items, offset, total);
   }
 }
