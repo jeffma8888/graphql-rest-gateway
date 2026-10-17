@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-18
+    lenses: new-capability
+    - Candidate A1 — Downstream request timeout with typed error mapping
+    - Candidate A2 — Root-level Query.review entry point
+    - Candidate A3 — Health-check endpoint on the GraphQL gateway
+    - Candidate B1 — Downstream request timeout with typed error mapping
+    - Candidate B2 — GraphQL config file (.graphqlrc.yml) for editor/codegen discovery
+    - Candidate B3 — Graceful shutdown with in-flight request draining
+    winner: A1
+    ship: pending (not yet decided)
   iter-17
     lenses: unknown
     - Candidate A1 — Fix stale README stats and decouple EB7 from hardcoded counts
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Root-level review lookup (Query.review)
     - Candidate B3 — Write-through mutation (Mutation.addReview)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 2aa20cc
   iter-16
     lenses: unknown
     - Candidate A1 — Index-based lookups in REST backend batch endpoints
@@ -61,4 +71,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-6 scouted iterations
+7 scouted iterations

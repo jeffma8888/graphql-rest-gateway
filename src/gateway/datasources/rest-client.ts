@@ -1,3 +1,5 @@
+import { GraphQLError } from 'graphql';
+
 /**
  * Thin HTTP client for the downstream REST service.
  *
@@ -13,10 +15,17 @@ export interface RestClientStats {
 
 export type QueryParams = Record<string, string | number | ReadonlyArray<string> | undefined>;
 
+/** Default downstream timeout when none is configured (30 seconds). */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
+  /** Per-request deadline in milliseconds for every downstream call. */
+  readonly timeoutMs: number;
 
-  constructor(private readonly baseUrl: string) {}
+  constructor(private readonly baseUrl: string, timeoutMs?: number) {
+    this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
 
   private track(path: string): void {
     this.stats.total += 1;
@@ -24,8 +33,6 @@ export class RestClient {
   }
 
   async get<T>(path: string, params?: QueryParams): Promise<T> {
-    // Count by canonical path (without querystring) so batched vs naive is
-    // an apples-to-apples "how many times did we hit /books/by-author" figure.
     this.track(path);
 
     const url = new URL(path, this.baseUrl);
@@ -36,7 +43,18 @@ export class RestClient {
       }
     }
 
-    const res = await fetch(url);
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new GraphQLError(`Downstream request to ${path} timed out after ${this.timeoutMs}ms`, {
+          extensions: { code: 'DOWNSTREAM_TIMEOUT' },
+        });
+      }
+      throw err;
+    }
+
     if (!res.ok) {
       throw new Error(`Downstream REST error ${res.status} ${res.statusText} for ${path}`);
     }

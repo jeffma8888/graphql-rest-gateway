@@ -10,6 +10,8 @@ export interface GatewayOptions {
   maxDepth?: number;
   maxComplexity?: number;
   loaderOptions?: LoaderOptions;
+  /** Downstream REST call timeout in ms. Finite default (30s) when omitted. */
+  downstreamTimeoutMs?: number;
 }
 
 /**
@@ -37,6 +39,7 @@ export function createGateway(opts: GatewayOptions) {
         restBaseUrl: opts.restBaseUrl,
         authorization: request.headers.get('authorization'),
         loaderOptions: opts.loaderOptions,
+        downstreamTimeoutMs: opts.downstreamTimeoutMs,
       }),
     plugins: [securityPlugin(maxDepth, maxComplexity)],
     graphiql: {
