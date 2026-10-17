@@ -36,6 +36,22 @@ export function buildBackend(opts: BackendOptions = {}): {
   const stats: BackendStats = { total: 0, byRoute: {} };
   const app = Fastify({ logger: false });
 
+  // Pre-built indexes: O(1) lookups instead of O(n) Array.filter per request.
+  const authorById = new Map<string, AuthorRow>(AUTHORS.map((a) => [a.id, a]));
+  const bookById = new Map<string, BookRow>(BOOKS.map((b) => [b.id, b]));
+  const booksByAuthorId = new Map<string, BookRow[]>();
+  for (const b of BOOKS) {
+    const list = booksByAuthorId.get(b.authorId);
+    if (list) list.push(b);
+    else booksByAuthorId.set(b.authorId, [b]);
+  }
+  const reviewsByBookId = new Map<string, ReviewRow[]>();
+  for (const r of REVIEWS) {
+    const list = reviewsByBookId.get(r.bookId);
+    if (list) list.push(r);
+    else reviewsByBookId.set(r.bookId, [r]);
+  }
+
   // Count every data request and apply artificial latency. `/__*` and
   // `/health` are excluded so observability endpoints don't pollute counts.
   app.addHook('onRequest', async (req) => {
@@ -68,30 +84,50 @@ export function buildBackend(opts: BackendOptions = {}): {
 
   // Batch-by-id: GET /authors/by-ids?ids=a1,a2 -> AuthorRow[]
   app.get<{ Querystring: { ids?: string } }>('/authors/by-ids', async (req) => {
-    const ids = new Set(parseIds(req.query.ids));
-    return AUTHORS.filter((a) => ids.has(a.id));
+    const ids = parseIds(req.query.ids);
+    const result: AuthorRow[] = [];
+    for (const id of ids) {
+      const row = authorById.get(id);
+      if (row) result.push(row);
+    }
+    return result;
   });
 
   // --- books ---------------------------------------------------------------
 
   // Batch-by-author: GET /books/by-author?authorIds=a1,a2 -> BookRow[]
   app.get<{ Querystring: { authorIds?: string } }>('/books/by-author', async (req) => {
-    const ids = new Set(parseIds(req.query.authorIds));
-    return BOOKS.filter((b) => ids.has(b.authorId));
+    const ids = parseIds(req.query.authorIds);
+    const result: BookRow[] = [];
+    for (const id of ids) {
+      const rows = booksByAuthorId.get(id);
+      if (rows) result.push(...rows);
+    }
+    return result;
   });
 
   // Batch-by-id: GET /books/by-ids?ids=b1,b2 -> BookRow[]
   app.get<{ Querystring: { ids?: string } }>('/books/by-ids', async (req) => {
-    const ids = new Set(parseIds(req.query.ids));
-    return BOOKS.filter((b) => ids.has(b.id));
+    const ids = parseIds(req.query.ids);
+    const result: BookRow[] = [];
+    for (const id of ids) {
+      const row = bookById.get(id);
+      if (row) result.push(row);
+    }
+    return result;
   });
 
   // --- reviews -------------------------------------------------------------
 
   // Batch-by-book: GET /reviews/by-book?bookIds=b1,b2 -> ReviewRow[]
   app.get<{ Querystring: { bookIds?: string } }>('/reviews/by-book', async (req) => {
-    const ids = new Set(parseIds(req.query.bookIds));
-    return REVIEWS.filter((r) => ids.has(r.bookId)) as ReviewRow[];
+    const ids = parseIds(req.query.bookIds);
+    const result: ReviewRow[] = [];
+    for (const id of ids) {
+      const rows = reviewsByBookId.get(id);
+      if (rows) result.push(...rows);
+    }
+    return result;
   });
 
   return { app, stats };

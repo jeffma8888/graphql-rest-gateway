@@ -192,7 +192,7 @@ describe('EB8 — PRODUCT.md roadmap', () => {
     const featureRows = product.split('\n').filter(
       (line) => /^\|\s*\d+\s*\|/.test(line)
     );
-    expect(featureRows).toHaveLength(8);
+    expect(featureRows).toHaveLength(10);
   });
 
   it('feature #1 is done at iter-03', () => {

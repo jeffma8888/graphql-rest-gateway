@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-16
+    lenses: unknown
+    - Candidate A1 — Index-based lookups in REST backend batch endpoints
+    - Candidate A2 — Expose yoga's parse+validate cache hit rate in benchmark output
+    - Candidate A3 — reviewsByBookId primes bookById for back-edge traversals
+    - Candidate B1 — Fix stale test count and coverage stats in README + badges
+    - Candidate B2 — Document cross-loader priming in README and update PRODUCT.md roadmap
+    - Candidate B3 — Add a CI drift guard that fails when README test count disagrees with vitest output
+    winner: A1
+    ship: pending (not yet decided)
   iter-15
     lenses: unknown
     - Candidate A1 -- Dead-export sweep: remove requireAuth, estimateComplexity, and RestClient.resetStats
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Parsed-operation document cache to amortize parse and validation cost
     - Candidate B3 -- Index-based lookups in REST backend batch endpoints
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 41e106f
   iter-03
     lenses: unknown
     - Candidate A1 — Remove uncalled exports: requireAuth, estimateComplexity, resetStats
@@ -41,4 +51,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-4 scouted iterations
+5 scouted iterations
