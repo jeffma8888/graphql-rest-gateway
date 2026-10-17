@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-117%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -97,18 +97,25 @@ import { createGateway, buildBackend } from 'graphql-rest-gateway';
 const { app } = buildBackend({ latencyMs: 0 });
 const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 
-// Create a GraphQL Yoga instance
-const yoga = createGateway({ restBaseUrl: baseUrl });
+// Create a gateway (returns { yoga, fetch, close })
+const gateway = createGateway({ restBaseUrl: baseUrl });
 
-// Use yoga.fetch() directly or mount on any Node HTTP server
-const res = await yoga.fetch('http://localhost/graphql', {
+// Use gateway.fetch() directly or mount gateway.yoga on any Node HTTP server
+const res = await gateway.fetch('http://localhost/graphql', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ query: '{ authors(first: 5) { edges { node { id name } } } }' }),
 });
+
+// Health check (short-circuits before GraphQL parsing)
+const health = await gateway.fetch('http://localhost/healthz');
+// -> 200 { "status": "ok" }
+
+// Graceful shutdown (drains in-flight requests, then resolves)
+await gateway.close();
 ```
 
-Exported symbols: `createGateway`, `GatewayOptions`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `schema`.
+Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `schema`.
 
 ---
 
@@ -210,7 +217,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 78 tests across 10 files (Vitest), all green:
+`npm test` — 117 tests across 13 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

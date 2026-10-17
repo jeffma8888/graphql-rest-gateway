@@ -23,7 +23,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 1 | Programmatic library entry point (exports map, barrel, .d.ts) | done | 03 |
 | 2 | Cross-loader priming (eliminate redundant back-edge fetches) | done | 15 |
 | 3 | Index-based lookups in REST backend batch endpoints | done | 16 |
-| 4 | Downstream request timeout with typed error mapping | planned | — |
+| 4 | Downstream request timeout with typed error mapping | done | 18 |
 | 5 | Health-check endpoint and graceful shutdown | planned | — |
 | 6 | Structured NOT_FOUND errors for root-level entity queries | planned | — |
 | 7 | Machine-readable benchmark output (--json, CI exit code) | planned | — |

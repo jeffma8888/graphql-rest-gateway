@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-19
+    lenses: unknown
+    - Candidate A1 — Health-check endpoint and graceful shutdown for the gateway process
+    - Candidate A2 — Structured NOT_FOUND errors for root-level entity queries
+    - Candidate A3 — GraphQL config file (.graphqlrc.yml) for editor and codegen discovery
+    - Candidate B1 — `.graphqlrc.yml` for editor/codegen/tool discovery
+    - Candidate B2 — SDL sub-path export for downstream codegen consumers
+    - Candidate B3 — Machine-readable benchmark output (`--json` flag + CI exit code)
+    winner: A1
+    ship: pending (not yet decided)
   iter-18
     lenses: new-capability
     - Candidate A1 — Downstream request timeout with typed error mapping
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — GraphQL config file (.graphqlrc.yml) for editor/codegen discovery
     - Candidate B3 — Graceful shutdown with in-flight request draining
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 10705ed
   iter-17
     lenses: unknown
     - Candidate A1 — Fix stale README stats and decouple EB7 from hardcoded counts
@@ -71,4 +81,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-7 scouted iterations
+8 scouted iterations

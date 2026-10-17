@@ -1,4 +1,4 @@
-import { createYoga, type Plugin } from 'graphql-yoga';
+import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
 import type { LoaderOptions } from './loaders';
@@ -14,11 +14,16 @@ export interface GatewayOptions {
   downstreamTimeoutMs?: number;
 }
 
-/**
- * Register our custom validation rules through envelop's `onValidate` hook, so
- * depth + complexity limits run during the standard GraphQL validation phase
- * (before execution) for every request.
- */
+type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
+
+export interface GatewayServer {
+  yoga: YogaInstance;
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  close(): Promise<void>;
+}
+
+const DRAIN_TIMEOUT_MS = 5000;
+
 function securityPlugin(maxDepth: number, maxComplexity: number): Plugin {
   return {
     onValidate({ addValidationRule }) {
@@ -28,11 +33,30 @@ function securityPlugin(maxDepth: number, maxComplexity: number): Plugin {
   };
 }
 
-export function createGateway(opts: GatewayOptions) {
+function healthzPlugin(): Plugin {
+  return {
+    onRequest({ request, endResponse, fetchAPI }) {
+      if (new URL(request.url).pathname === '/healthz') {
+        endResponse(
+          new fetchAPI.Response(JSON.stringify({ status: 'ok' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+    },
+  };
+}
+
+export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
 
-  return createYoga<Record<string, never>, GatewayContext>({
+  let shuttingDown = false;
+  let inFlight = 0;
+  let drainResolve: (() => void) | null = null;
+
+  const yoga = createYoga<Record<string, never>, GatewayContext>({
     schema,
     context: ({ request }) =>
       createContext({
@@ -41,7 +65,7 @@ export function createGateway(opts: GatewayOptions) {
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
       }),
-    plugins: [securityPlugin(maxDepth, maxComplexity)],
+    plugins: [healthzPlugin(), securityPlugin(maxDepth, maxComplexity)],
     graphiql: {
       title: 'graphql-rest-gateway',
       defaultQuery: `# Nested query -- one call from the client, batched downstream.
@@ -65,4 +89,35 @@ query Sample {
 }`,
     },
   });
+
+  return {
+    yoga,
+    fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      if (shuttingDown) {
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+      inFlight++;
+      const done = () => {
+        inFlight--;
+        if (shuttingDown && inFlight === 0 && drainResolve) drainResolve();
+      };
+      const result = yoga.fetch(input as any, init as any);
+      if (result instanceof Promise) {
+        return result.finally(done);
+      }
+      done();
+      return Promise.resolve(result);
+    },
+    async close(): Promise<void> {
+      shuttingDown = true;
+      if (inFlight > 0) {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            drainResolve = resolve;
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
+        ]);
+      }
+    },
+  };
 }
