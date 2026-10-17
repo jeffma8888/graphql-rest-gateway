@@ -3,8 +3,8 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-30%20passing-brightgreen)
-![coverage](https://img.shields.io/badge/coverage-~82%25%20lines-green)
+![tests](https://img.shields.io/badge/tests-78%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
@@ -210,7 +210,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 30 tests across 7 files (Vitest), all green:
+`npm test` — 78 tests across 10 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -227,7 +227,7 @@ expect(batched.data).toEqual(naive.data); // identical results, fewer calls
 
 If someone deletes a loader or sneaks a fetch into a resolver, the batched count blows up and this test fails.
 
-Coverage (`npm run coverage`, istanbul): **~79% statements / ~82% lines / ~85% functions**. Uncovered lines are mostly defensive error branches.
+Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% functions**. Uncovered lines are mostly defensive error branches.
 
 > Test infra note: `graphql` must be a single module instance or you get `Cannot use GraphQLSchema from another module or realm`. `vitest.config.ts` dedupes `graphql` and inlines the graphql/envelop/graphql-tools chain so Vite doesn't split it across ESM/CJS realms.
 

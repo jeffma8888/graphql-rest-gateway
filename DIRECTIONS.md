@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-17
+    lenses: unknown
+    - Candidate A1 — Fix stale README stats and decouple EB7 from hardcoded counts
+    - Candidate A2 — Document cross-loader priming and index-based lookups in README
+    - Candidate A3 — Add a CI-friendly README-stats drift guard
+    - Candidate B1 — Downstream request timeout with typed error mapping
+    - Candidate B2 — Root-level review lookup (Query.review)
+    - Candidate B3 — Write-through mutation (Mutation.addReview)
+    winner: A1
+    ship: pending (not yet decided)
   iter-16
     lenses: unknown
     - Candidate A1 — Index-based lookups in REST backend batch endpoints
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Document cross-loader priming in README and update PRODUCT.md roadmap
     - Candidate B3 — Add a CI drift guard that fails when README test count disagrees with vitest output
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 6f8c1de
   iter-15
     lenses: unknown
     - Candidate A1 -- Dead-export sweep: remove requireAuth, estimateComplexity, and RestClient.resetStats
@@ -51,4 +61,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-5 scouted iterations
+6 scouted iterations

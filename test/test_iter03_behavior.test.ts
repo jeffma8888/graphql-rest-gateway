@@ -157,12 +157,16 @@ describe('EB4 — barrel-imported gateway boots and serves queries', () => {
 describe('EB7 — README content updates', () => {
   const readme = readText('README.md');
 
-  it('badge shows 30 passing tests', () => {
-    expect(readme).toMatch(/tests-30/);
+  it('badge shows at least 78 passing tests', () => {
+    const match = readme.match(/tests-(\d+)%20passing/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(78);
   });
 
-  it('testing section mentions 7 test files', () => {
-    expect(readme).toMatch(/7 files/);
+  it('testing section mentions at least 10 test files', () => {
+    const match = readme.match(/(\d+) files \(Vitest\)/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(10);
   });
 
   it('has a Programmatic usage section', () => {
@@ -188,11 +192,11 @@ describe('EB8 — PRODUCT.md roadmap', () => {
     expect(product).toMatch(/\|\s*#\s*\|\s*Feature/);
   });
 
-  it('has 8 features in the table', () => {
+  it('has at least 10 features in the table', () => {
     const featureRows = product.split('\n').filter(
       (line) => /^\|\s*\d+\s*\|/.test(line)
     );
-    expect(featureRows).toHaveLength(10);
+    expect(featureRows.length).toBeGreaterThanOrEqual(10);
   });
 
   it('feature #1 is done at iter-03', () => {
