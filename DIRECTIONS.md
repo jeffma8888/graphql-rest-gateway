@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-26
+    lenses: unknown
+    - Candidate A1 -- `.graphqlrc.yml` for editor and codegen schema discovery
+    - Candidate A2 -- Machine-readable benchmark output (`--json` flag + CI exit code)
+    - Candidate A3 -- SDL sub-path export for downstream codegen consumers
+    - Candidate B1 -- Remove three prose-only exports: `requireAuth`, `estimateComplexity`, `resetStats`
+    - Candidate B2 -- Remove BackendStats tracking and `/__stats` endpoints from the REST backend
+    - Candidate B3 -- Inline the `models.ts` mapper aliases into codegen config
+    winner: A1
+    ship: pending (not yet decided)
   iter-19
     lenses: unknown
     - Candidate A1 — Health-check endpoint and graceful shutdown for the gateway process
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — SDL sub-path export for downstream codegen consumers
     - Candidate B3 — Machine-readable benchmark output (`--json` flag + CI exit code)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED a76f8c3
   iter-18
     lenses: new-capability
     - Candidate A1 — Downstream request timeout with typed error mapping
@@ -81,4 +91,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-8 scouted iterations
+9 scouted iterations
