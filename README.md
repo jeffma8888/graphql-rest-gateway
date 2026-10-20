@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-140%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-156%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -205,7 +205,7 @@ Two custom GraphQL **validation rules** run before execution (`src/gateway/secur
 Both surface a typed error (`extensions.code = QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) and are covered by unit + HTTP integration tests.
 
 ### Partial errors & null propagation
-`Book.author` and `Review.book` are non-null fields. When a referenced entity is missing, the resolver throws a `GraphQLError` (`code: NOT_FOUND`), which triggers GraphQL's standard null-propagation: the error surfaces in `errors[]` and null bubbles to the nearest nullable parent rather than corrupting the response. DataLoaders return `null` for a missing single-entity key (never throw at the batch level), so a bad id degrades gracefully.
+Root-level `Query.author` and `Query.book` return structured NOT_FOUND errors when the requested id does not exist: `data.author: null` (or `data.book: null`) plus an entry in `errors[]` with `extensions: { code: "NOT_FOUND", id: "<requested-id>" }`, letting clients correlate exactly which entity was missing. Back-edge resolvers (`Book.author`, `Review.book`) follow the same pattern for non-null fields — a missing referenced entity throws a `GraphQLError` (`code: NOT_FOUND`), which triggers GraphQL's standard null-propagation: the error surfaces in `errors[]` and null bubbles to the nearest nullable parent rather than corrupting the response. DataLoaders return `null` for a missing single-entity key (never throw at the batch level), so a bad id degrades gracefully.
 
 ### <a name="auth-context"></a>Auth context
 A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` for anonymous callers, revealed for authenticated ones — a concrete, tested example of context-based authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token.
@@ -217,7 +217,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 140 tests across 15 files (Vitest), all green:
+`npm test` — 156 tests across 16 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

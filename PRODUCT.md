@@ -25,7 +25,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 3 | Index-based lookups in REST backend batch endpoints | done | 16 |
 | 4 | Downstream request timeout with typed error mapping | done | 18 |
 | 5 | Health-check endpoint and graceful shutdown | done | 19 |
-| 6 | Structured NOT_FOUND errors for root-level entity queries | planned | — |
+| 6 | Structured NOT_FOUND errors for root-level entity queries | done | 29 |
 | 7 | Machine-readable benchmark output (--json, CI exit code) | planned | — |
 | 8 | GraphQL config file (.graphqlrc.yml) for editor/codegen discovery | done | 26 |
 | 9 | Response caching layer (per-request + optional shared TTL cache) | planned | — |

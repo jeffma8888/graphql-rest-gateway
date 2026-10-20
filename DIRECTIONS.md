@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-29
+    lenses: unknown
+    - Candidate A1 -- Update README section 10 to remove shipped features and add new planned items
+    - Candidate A2 -- Fix README exported-symbols list and document BackendOptions in programmatic usage
+    - Candidate A3 -- Document cross-loader priming and timeout in README architecture section
+    - Candidate B1 — Structured NOT_FOUND errors for root-level entity queries
+    - Candidate B2 — Root-level Query.review(id) entry point
+    - Candidate B3 — Paginated book listing Query.books(first, after)
+    winner: B1
+    ship: PUSHED b9dbf8f
   iter-27
     lenses: unknown
     - Candidate A1 -- Remove three prose-only functions: `requireAuth`, `estimateComplexity`, `resetStats`
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Benchmark multi-run percentile reporting (p50/p95/p99)
     - Candidate B3 — Response caching layer for repeated identical queries (per-request scope)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED a72cdf6
   iter-26
     lenses: unknown
     - Candidate A1 -- `.graphqlrc.yml` for editor and codegen schema discovery
@@ -101,4 +111,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-10 scouted iterations
+11 scouted iterations

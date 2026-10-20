@@ -13,8 +13,24 @@ import type { Resolvers } from '../generated/graphql';
 export const resolvers: Resolvers = {
   Query: {
     authors: (_parent, args, ctx) => ctx.services.author.listConnection(args.first ?? 10, args.after),
-    author: (_parent, args, ctx) => ctx.services.author.getAuthor(args.id),
-    book: (_parent, args, ctx) => ctx.services.book.getBook(args.id),
+    author: async (_parent, args, ctx) => {
+      const author = await ctx.services.author.getAuthor(args.id);
+      if (!author) {
+        throw new GraphQLError(`Author ${args.id} not found`, {
+          extensions: { code: 'NOT_FOUND', id: args.id },
+        });
+      }
+      return author;
+    },
+    book: async (_parent, args, ctx) => {
+      const book = await ctx.services.book.getBook(args.id);
+      if (!book) {
+        throw new GraphQLError(`Book ${args.id} not found`, {
+          extensions: { code: 'NOT_FOUND', id: args.id },
+        });
+      }
+      return book;
+    },
   },
 
   Author: {
