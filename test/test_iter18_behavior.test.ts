@@ -36,7 +36,7 @@ let fastApp: FastifyInstance;
 let fastBaseUrl: string;
 
 beforeAll(async () => {
-  slowApp = buildBackend({ latencyMs: 200 }).app;
+  slowApp = buildBackend({ latencyMs: 200, forceCloseConnections: true }).app;
   slowBaseUrl = await slowApp.listen({ port: 0, host: '127.0.0.1' });
   fastApp = buildBackend({ latencyMs: 0 }).app;
   fastBaseUrl = await fastApp.listen({ port: 0, host: '127.0.0.1' });

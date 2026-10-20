@@ -14,6 +14,8 @@ import { AUTHORS, BOOKS, REVIEWS, type AuthorRow, type BookRow, type ReviewRow }
 export interface BackendOptions {
   /** Artificial latency added to every data request (ms). Default 10. */
   latencyMs?: number;
+  /** Destroy idle keep-alive sockets on close instead of waiting for timeout. */
+  forceCloseConnections?: boolean;
 }
 
 export interface BackendStats {
@@ -34,7 +36,7 @@ export function buildBackend(opts: BackendOptions = {}): {
 } {
   const latencyMs = opts.latencyMs ?? 10;
   const stats: BackendStats = { total: 0, byRoute: {} };
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, forceCloseConnections: opts.forceCloseConnections });
 
   // Pre-built indexes: O(1) lookups instead of O(n) Array.filter per request.
   const authorById = new Map<string, AuthorRow>(AUTHORS.map((a) => [a.id, a]));

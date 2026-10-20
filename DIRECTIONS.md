@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-27
+    lenses: unknown
+    - Candidate A1 -- Remove three prose-only functions: `requireAuth`, `estimateComplexity`, `resetStats`
+    - Candidate A2 -- Remove BackendStats tracking and `/__stats` endpoint from the REST backend
+    - Candidate A3 -- Inline `models.ts` type aliases into codegen config
+    - Candidate B1 — Eliminate 4-second keep-alive drain stall in iter-18 test teardown
+    - Candidate B2 — Benchmark multi-run percentile reporting (p50/p95/p99)
+    - Candidate B3 — Response caching layer for repeated identical queries (per-request scope)
+    winner: B1
+    ship: pending (not yet decided)
   iter-26
     lenses: unknown
     - Candidate A1 -- `.graphqlrc.yml` for editor and codegen schema discovery
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Remove BackendStats tracking and `/__stats` endpoints from the REST backend
     - Candidate B3 -- Inline the `models.ts` mapper aliases into codegen config
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 481b4d9
   iter-19
     lenses: unknown
     - Candidate A1 — Health-check endpoint and graceful shutdown for the gateway process
@@ -91,4 +101,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-9 scouted iterations
+10 scouted iterations
