@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-34
+    lenses: unknown
+    - Candidate A1 — reviewsByBookId primes bookById for back-edge traversals
+    - Candidate A2 — Benchmark multi-run percentile reporting (p50/p95/p99)
+    - Candidate A3 — ETag-based conditional fetch for downstream REST calls
+    - Candidate B1 — Document downstream timeout and cross-loader priming in README section 7
+    - Candidate B2 — Expand README programmatic usage to show full GatewayOptions
+    - Candidate B3 — CI drift guard: README must mention every GraphQL extension code the code defines
+    winner: B3
+    ship: pending (not yet decided)
   iter-29
     lenses: unknown
     - Candidate A1 -- Update README section 10 to remove shipped features and add new planned items
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Root-level Query.review(id) entry point
     - Candidate B3 — Paginated book listing Query.books(first, after)
     winner: B1
-    ship: PUSHED b9dbf8f
+    ship: PUSHED 9c733af
   iter-27
     lenses: unknown
     - Candidate A1 -- Remove three prose-only functions: `requireAuth`, `estimateComplexity`, `resetStats`
@@ -111,4 +121,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-11 scouted iterations
+12 scouted iterations

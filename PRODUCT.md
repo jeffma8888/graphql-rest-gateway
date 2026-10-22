@@ -30,3 +30,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 8 | GraphQL config file (.graphqlrc.yml) for editor/codegen discovery | done | 26 |
 | 9 | Response caching layer (per-request + optional shared TTL cache) | planned | — |
 | 10 | OpenTelemetry tracing spans per resolver and downstream call | planned | — |
+| 11 | Extension-code README drift guard + doc backfill | done | 34 |
