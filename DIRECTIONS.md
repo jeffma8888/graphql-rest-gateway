@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-37
+    lenses: unknown
+    - Candidate B1 -- Expose computed query cost and depth in response extensions
+    - Candidate B2 -- Machine-readable benchmark output (--json flag + CI exit code)
+    - Candidate B3 -- Configurable maxPageSize on GatewayOptions
+    - Candidate B1 -- Export extension codes as a typed constant from the library entry point
+    - Candidate B2 -- SDL sub-path export for downstream codegen consumers
+    - Candidate B3 -- `bin` entry for `npx graphql-rest-gateway` as an adoption on-ramp
+    winner: B1
+    ship: pending (not yet decided)
   iter-36
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Root-level Query.review(id) entry point
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Expose computed query cost and depth in response extensions
     - Candidate B3 -- Configurable maxPageSize on GatewayOptions
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 1e6ee54
   iter-35
     lenses: unknown
     - Candidate A1 -- Document the iter-behavior test pattern in README section 8
@@ -141,4 +151,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-14 scouted iterations
+15 scouted iterations

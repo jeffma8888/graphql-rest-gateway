@@ -39,6 +39,14 @@ function selectionSetDepth(
   return max;
 }
 
+/** Exported for unit tests / tooling: compute the depth without a limit. */
+export function measureDepth(
+  selectionSet: SelectionSetNode,
+  fragments: Map<string, FragmentDefinitionNode>,
+): number {
+  return selectionSetDepth(selectionSet, fragments, new Set());
+}
+
 export function depthLimit(maxDepth: number): ValidationRule {
   return (context) => {
     const fragments = new Map<string, FragmentDefinitionNode>();

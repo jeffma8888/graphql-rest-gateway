@@ -1,9 +1,10 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
+import { Kind, type ExecutionResult, type DefinitionNode, type FragmentDefinitionNode } from 'graphql';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
 import type { LoaderOptions } from './loaders';
-import { depthLimit } from './security/depth-limit';
-import { complexityLimit } from './security/complexity';
+import { depthLimit, measureDepth } from './security/depth-limit';
+import { complexityLimit, estimateComplexity } from './security/complexity';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -48,6 +49,48 @@ function healthzPlugin(): Plugin {
   };
 }
 
+function queryComplexityPlugin(defaultListSize: number): Plugin {
+  return {
+    onExecute({ args }) {
+      const doc = args.document;
+      const gqlSchema = args.schema;
+      const fragments = new Map<string, FragmentDefinitionNode>();
+      for (const def of doc.definitions) {
+        if (def.kind === Kind.FRAGMENT_DEFINITION) fragments.set(def.name.value, def);
+      }
+      const op = doc.definitions.find((d: DefinitionNode) => d.kind === Kind.OPERATION_DEFINITION);
+      if (!op || op.kind !== Kind.OPERATION_DEFINITION) return;
+      const rootType =
+        op.operation === 'query'
+          ? gqlSchema.getQueryType()
+          : op.operation === 'mutation'
+            ? gqlSchema.getMutationType()
+            : gqlSchema.getSubscriptionType();
+      const cost = estimateComplexity(
+        op.selectionSet,
+        rootType,
+        (name) => gqlSchema.getType(name) ?? undefined,
+        fragments,
+        defaultListSize,
+      );
+      const depth = measureDepth(op.selectionSet, fragments);
+      return {
+        onExecuteDone({ result, setResult }) {
+          if (Symbol.asyncIterator in Object(result)) return;
+          const execResult = result as ExecutionResult;
+          setResult({
+            ...execResult,
+            extensions: {
+              ...execResult.extensions,
+              queryComplexity: { cost, depth },
+            },
+          });
+        },
+      };
+    },
+  };
+}
+
 export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
@@ -65,7 +108,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
       }),
-    plugins: [healthzPlugin(), securityPlugin(maxDepth, maxComplexity)],
+    plugins: [healthzPlugin(), securityPlugin(maxDepth, maxComplexity), queryComplexityPlugin(5)],
     graphiql: {
       title: 'graphql-rest-gateway',
       defaultQuery: `# Nested query -- one call from the client, batched downstream.
