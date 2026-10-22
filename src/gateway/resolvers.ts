@@ -53,8 +53,9 @@ export const resolvers: Resolvers = {
   },
 
   Review: {
-    // Auth-context demo: reviewer identity is PII, redacted unless authenticated.
-    reviewer: (review, _args, ctx) => (ctx.auth.userId ? review.reviewer : 'REDACTED'),
+    // PII field: requires both authentication and the 'pii' scope.
+    reviewer: (review, _args, ctx) =>
+      ctx.auth.userId && ctx.auth.scopes.includes('pii') ? review.reviewer : 'REDACTED',
     book: async (review, _args, ctx) => {
       const book = await ctx.services.book.getBook(review.bookId);
       if (!book) {

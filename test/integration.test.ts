@@ -81,7 +81,7 @@ describe('gateway integration (HTTP via yoga.fetch)', () => {
   it('threads auth: reviewer is redacted anonymously, revealed with a token', async () => {
     const q = `query { book(id: "a1-b1") { reviews { reviewer } } }`;
     const anon = await gql(q);
-    const authed = await gql(q, { authorization: 'Bearer user:7' });
+    const authed = await gql(q, { authorization: 'Bearer user:7:pii' });
     const anonNames = anon.body.data.book.reviews.map((r: any) => r.reviewer);
     const authedNames = authed.body.data.book.reviews.map((r: any) => r.reviewer);
     expect(anonNames.every((n: string) => n === 'REDACTED')).toBe(true);

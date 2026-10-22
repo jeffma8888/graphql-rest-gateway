@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-172%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -84,7 +84,7 @@ Other entry points:
 | `npm run codegen` | Regenerate TS types from `schema.graphql` |
 | `npm run build` | Type-check + emit to `dist/` |
 
-> `reviewer` is redacted to `REDACTED` unless the request carries a valid bearer token. Send header `Authorization: Bearer user:42` (see [Auth context](#auth-context)) to reveal it.
+> `reviewer` is redacted to `REDACTED` unless the request carries a bearer token with the `pii` scope. Send header `Authorization: Bearer user:42:pii` (see [Auth context](#auth-context)) to reveal it.
 
 ### Programmatic usage
 
@@ -211,7 +211,7 @@ Root-level `Query.author` and `Query.book` return structured NOT_FOUND errors wh
 Every outbound REST call is guarded by a per-request deadline (`downstreamTimeoutMs`, default 30 s). If the downstream service does not respond in time, the call aborts and the resolver surfaces a typed error (`extensions.code = DOWNSTREAM_TIMEOUT`). Configure the timeout via the `downstreamTimeoutMs` option in `createGateway` / `createContext`.
 
 ### <a name="auth-context"></a>Auth context
-A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` for anonymous callers, revealed for authenticated ones — a concrete, tested example of context-based authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token; unauthenticated callers receive a typed error (`extensions.code = UNAUTHENTICATED`).
+A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token; unauthenticated callers receive a typed error (`extensions.code = UNAUTHENTICATED`).
 
 ### Observability
 The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. This is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
@@ -220,7 +220,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 172 tests across 17 files (Vitest), all green:
+`npm test` — 182 tests across 18 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -260,7 +260,7 @@ Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% f
 - **Schema registry + checks** — publish the SDL to a registry and run breaking-change checks in CI against live operation traffic.
 - **OpenTelemetry tracing** — spans per resolver + per downstream call (the `/__stats` counter is the placeholder seam), exported to a collector for latency attribution.
 - **Persisted queries + APQ** — allowlist known operations to shrink payloads and shut down arbitrary-query DoS.
-- **Real auth** — replace the stub bearer parser with JWT/JWKS verification and scope-based field authorization.
+- **Real auth** — replace the stub bearer parser with JWT/JWKS verification (scope-based field authorization is already demonstrated on `Review.reviewer`).
 
 ---
 

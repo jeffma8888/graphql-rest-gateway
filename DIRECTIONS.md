@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-35
+    lenses: unknown
+    - Candidate A1 -- Document the iter-behavior test pattern in README section 8
+    - Candidate B1 -- Expand README programmatic-usage section to document GatewayOptions and BackendOptions
+    - Candidate C1 -- Fix README requireAuth documentation vs public-API omission
+    - Candidate B1 -- Root-level Query.review(id) entry point
+    - Candidate B2 -- Paginated Query.books(first, after) Relay connection
+    - Candidate B3 -- Scope-based field authorization on Review.reviewer
+    winner: B3
+    ship: pending (not yet decided)
   iter-34
     lenses: unknown
     - Candidate A1 — reviewsByBookId primes bookById for back-edge traversals
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Expand README programmatic usage to show full GatewayOptions
     - Candidate B3 — CI drift guard: README must mention every GraphQL extension code the code defines
     winner: B3
-    ship: pending (not yet decided)
+    ship: PUSHED ce89ddc
   iter-29
     lenses: unknown
     - Candidate A1 -- Update README section 10 to remove shipped features and add new planned items
@@ -121,4 +131,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-12 scouted iterations
+13 scouted iterations

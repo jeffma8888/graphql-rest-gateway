@@ -61,7 +61,7 @@ describe('auth context threaded into resolvers', () => {
     const result = await graphql({
       schema,
       source: REVIEWER_QUERY,
-      contextValue: createContext({ restBaseUrl: baseUrl, authorization: 'Bearer user:42' }),
+      contextValue: createContext({ restBaseUrl: baseUrl, authorization: 'Bearer user:42:pii' }),
     });
     const reviewers = (result.data as any)?.book?.reviews?.map((r: any) => r.reviewer);
     expect(reviewers).toBeDefined();
