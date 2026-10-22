@@ -26,6 +26,7 @@ function extractExtensionCodes(): string[] {
 
 const KNOWN_CODES = [
   'BAD_CURSOR',
+  'DOWNSTREAM_ERROR',
   'DOWNSTREAM_TIMEOUT',
   'NOT_FOUND',
   'QUERY_TOO_COMPLEX',
@@ -63,11 +64,11 @@ describe('EB2 — every source extension code is documented in README', () => {
   });
 });
 
-// EB3 — At least 6 known codes discovered
-describe('EB3 — discovers at least the 6 currently-defined codes', () => {
-  it('finds at least 6 extension codes', () => {
+// EB3 — At least 7 known codes discovered
+describe('EB3 — discovers at least the 7 currently-defined codes', () => {
+  it('finds at least 7 extension codes', () => {
     const codes = extractExtensionCodes();
-    expect(codes.length).toBeGreaterThanOrEqual(6);
+    expect(codes.length).toBeGreaterThanOrEqual(7);
   });
 
   it.each(KNOWN_CODES)('discovers %s', (code) => {

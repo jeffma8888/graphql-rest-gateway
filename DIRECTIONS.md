@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-36
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Root-level Query.review(id) entry point
+    - Candidate B1 -- Filtered nested field: Book.reviews(minRating: Int)
+    - Candidate C1 -- Union-type search: Query.search(term) returning Author | Book
+    - Candidate B1 -- Typed DOWNSTREAM_ERROR for non-OK HTTP responses
+    - Candidate B2 -- Expose computed query cost and depth in response extensions
+    - Candidate B3 -- Configurable maxPageSize on GatewayOptions
+    winner: B1
+    ship: pending (not yet decided)
   iter-35
     lenses: unknown
     - Candidate A1 -- Document the iter-behavior test pattern in README section 8
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Paginated Query.books(first, after) Relay connection
     - Candidate B3 -- Scope-based field authorization on Review.reviewer
     winner: B3
-    ship: pending (not yet decided)
+    ship: PUSHED f870ff9
   iter-34
     lenses: unknown
     - Candidate A1 — reviewsByBookId primes bookById for back-edge traversals
@@ -131,4 +141,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-13 scouted iterations
+14 scouted iterations

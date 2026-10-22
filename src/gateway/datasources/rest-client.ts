@@ -56,7 +56,9 @@ export class RestClient {
     }
 
     if (!res.ok) {
-      throw new Error(`Downstream REST error ${res.status} ${res.statusText} for ${path}`);
+      throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {
+        extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
+      });
     }
     return (await res.json()) as T;
   }

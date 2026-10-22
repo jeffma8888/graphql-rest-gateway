@@ -32,3 +32,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 10 | OpenTelemetry tracing spans per resolver and downstream call | planned | — |
 | 11 | Extension-code README drift guard + doc backfill | done | 34 |
 | 12 | Scope-based field authorization (pii scope on Review.reviewer) | done | 35 |
+| 13 | Typed DOWNSTREAM_ERROR for non-OK HTTP responses | done | 36 |
