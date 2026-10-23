@@ -1,10 +1,11 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
-import { Kind, type ExecutionResult, type DefinitionNode, type FragmentDefinitionNode } from 'graphql';
+import { Kind, type ExecutionResult, type DefinitionNode } from 'graphql';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
 import type { LoaderOptions } from './loaders';
 import { depthLimit, measureDepth } from './security/depth-limit';
 import { complexityLimit, estimateComplexity } from './security/complexity';
+import { getValidationResult, buildFragmentMap } from './security/validation-cache';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -54,26 +55,33 @@ function queryComplexityPlugin(defaultListSize: number): Plugin {
     onExecute({ args }) {
       const doc = args.document;
       const gqlSchema = args.schema;
-      const fragments = new Map<string, FragmentDefinitionNode>();
-      for (const def of doc.definitions) {
-        if (def.kind === Kind.FRAGMENT_DEFINITION) fragments.set(def.name.value, def);
+      const cached = getValidationResult(doc);
+
+      let cost: number;
+      let depth: number;
+      if (cached && cached.cost >= 0 && cached.depth >= 0) {
+        cost = cached.cost;
+        depth = cached.depth;
+      } else {
+        const fragments = cached?.fragments ?? buildFragmentMap(doc);
+        const op = doc.definitions.find((d: DefinitionNode) => d.kind === Kind.OPERATION_DEFINITION);
+        if (!op || op.kind !== Kind.OPERATION_DEFINITION) return;
+        const rootType =
+          op.operation === 'query'
+            ? gqlSchema.getQueryType()
+            : op.operation === 'mutation'
+              ? gqlSchema.getMutationType()
+              : gqlSchema.getSubscriptionType();
+        cost = estimateComplexity(
+          op.selectionSet,
+          rootType,
+          (name) => gqlSchema.getType(name) ?? undefined,
+          fragments,
+          defaultListSize,
+        );
+        depth = measureDepth(op.selectionSet, fragments);
       }
-      const op = doc.definitions.find((d: DefinitionNode) => d.kind === Kind.OPERATION_DEFINITION);
-      if (!op || op.kind !== Kind.OPERATION_DEFINITION) return;
-      const rootType =
-        op.operation === 'query'
-          ? gqlSchema.getQueryType()
-          : op.operation === 'mutation'
-            ? gqlSchema.getMutationType()
-            : gqlSchema.getSubscriptionType();
-      const cost = estimateComplexity(
-        op.selectionSet,
-        rootType,
-        (name) => gqlSchema.getType(name) ?? undefined,
-        fragments,
-        defaultListSize,
-      );
-      const depth = measureDepth(op.selectionSet, fragments);
+
       return {
         onExecuteDone({ result, setResult }) {
           if (Symbol.asyncIterator in Object(result)) return;

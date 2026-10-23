@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-40
+    lenses: unknown
+    - Candidate A1 — Deduplicate validation-phase AST walks (share computed cost+depth with the metrics plugin)
+    - Candidate A2 — Pre-build downstream URLs in RestClient (avoid per-call `new URL()` construction)
+    - Candidate A3 — Benchmark multi-run statistics (p50/p95/p99 wall-clock with warm-up isolation)
+    - Candidate A1 — GatewayOptions and BackendOptions API reference in README programmatic usage
+    - Candidate B1 — Document cross-loader priming and index-based lookups in README section 7
+    - Candidate C1 — Expand README section 9 with post-launch design decisions
+    winner: A1
+    ship: pending (not yet decided)
   iter-38
     lenses: unknown
     - Candidate A1 -- Machine-readable benchmark output (--json flag + CI exit code)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Remove REST backend `/__stats` and `/__stats/reset` endpoints
     - Candidate B3 -- Collapse duplicate fragment-parsing boilerplate across depth-limit, complexity, and queryComplexityPlugin
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 712f450
   iter-37
     lenses: unknown
     - Candidate B1 -- Expose computed query cost and depth in response extensions
@@ -161,4 +171,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-16 scouted iterations
+17 scouted iterations

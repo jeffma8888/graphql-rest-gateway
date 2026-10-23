@@ -1,5 +1,6 @@
 import { GraphQLError, Kind } from 'graphql';
 import type { ValidationRule, SelectionSetNode, FragmentDefinitionNode } from 'graphql';
+import { buildFragmentMap, getValidationResult, setValidationResult } from './validation-cache';
 
 /**
  * Query depth-limiting validation rule.
@@ -49,13 +50,17 @@ export function measureDepth(
 
 export function depthLimit(maxDepth: number): ValidationRule {
   return (context) => {
-    const fragments = new Map<string, FragmentDefinitionNode>();
-    for (const def of context.getDocument().definitions) {
-      if (def.kind === Kind.FRAGMENT_DEFINITION) fragments.set(def.name.value, def);
-    }
+    const doc = context.getDocument();
+    const fragments = buildFragmentMap(doc);
     return {
       OperationDefinition(node) {
         const depth = selectionSetDepth(node.selectionSet, fragments, new Set());
+        const existing = getValidationResult(doc);
+        if (existing) {
+          existing.depth = depth;
+        } else {
+          setValidationResult(doc, { cost: -1, depth, fragments });
+        }
         if (depth > maxDepth) {
           context.reportError(
             new GraphQLError(

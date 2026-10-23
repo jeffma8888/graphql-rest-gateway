@@ -10,6 +10,7 @@ import {
   type GraphQLNamedType,
 } from 'graphql';
 import type { ValidationRule, SelectionSetNode, FragmentDefinitionNode, FieldNode } from 'graphql';
+import { getValidationResult, setValidationResult, buildFragmentMap } from './validation-cache';
 
 /**
  * Query complexity (cost) validation rule.
@@ -92,11 +93,10 @@ function costOfSelectionSet(
 
 export function complexityLimit(maxComplexity: number, defaultListSize = 5): ValidationRule {
   return (context) => {
+    const doc = context.getDocument();
     const schema = context.getSchema();
-    const fragments = new Map<string, FragmentDefinitionNode>();
-    for (const def of context.getDocument().definitions) {
-      if (def.kind === Kind.FRAGMENT_DEFINITION) fragments.set(def.name.value, def);
-    }
+    const cached = getValidationResult(doc);
+    const fragments = cached?.fragments ?? buildFragmentMap(doc);
     const cc: CostContext = {
       getType: (name) => schema.getType(name) ?? undefined,
       fragments,
@@ -112,6 +112,11 @@ export function complexityLimit(maxComplexity: number, defaultListSize = 5): Val
               ? schema.getMutationType()
               : schema.getSubscriptionType();
         const cost = costOfSelectionSet(node.selectionSet, rootType, cc, new Set());
+        if (cached) {
+          cached.cost = cost;
+        } else {
+          setValidationResult(doc, { cost, depth: -1, fragments });
+        }
         if (cost > maxComplexity) {
           context.reportError(
             new GraphQLError(
