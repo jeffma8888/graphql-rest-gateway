@@ -41,6 +41,27 @@ export interface RunResult {
   data: ExecutionResult['data'];
 }
 
+export interface BenchmarkOutput {
+  naive: { calls: number; durationMs: number };
+  batched: { calls: number; durationMs: number };
+  factor: number;
+}
+
+function parseArgs(argv: string[]): { json: boolean; threshold: number | null } {
+  let json = false;
+  let threshold: number | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--json') json = true;
+    if (argv[i] === '--threshold' && i + 1 < argv.length) {
+      threshold = Number(argv[i + 1]);
+      if (!Number.isFinite(threshold) || threshold < 0) {
+        throw new Error(`Invalid --threshold value: ${argv[i + 1]}`);
+      }
+    }
+  }
+  return { json, threshold };
+}
+
 export async function runOnce(baseUrl: string, mode: 'naive' | 'batched'): Promise<RunResult> {
   const client = new RestClient(baseUrl);
   const contextValue = createContext({
@@ -109,15 +130,30 @@ function printTable(naive: RunResult, batched: RunResult): void {
   console.log('-----------------------');
 }
 
-export async function main(): Promise<void> {
-  // latency=0 to isolate the CALL COUNT (the real N+1 signal); parallelism
-  // hides latency differences, so counts -- i.e. downstream load -- is the point.
+export async function main(argv: string[] = process.argv.slice(2)): Promise<BenchmarkOutput> {
+  const { json, threshold } = parseArgs(argv);
   const { app } = buildBackend({ latencyMs: 0 });
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   try {
     const naive = await runOnce(baseUrl, 'naive');
     const batched = await runOnce(baseUrl, 'batched');
-    printTable(naive, batched);
+    const factor = Math.round((naive.total / batched.total) * 10) / 10;
+    const output: BenchmarkOutput = {
+      naive: { calls: naive.total, durationMs: Math.round(naive.ms * 10) / 10 },
+      batched: { calls: batched.total, durationMs: Math.round(batched.ms * 10) / 10 },
+      factor,
+    };
+
+    if (json) {
+      console.log(JSON.stringify(output));
+    } else {
+      printTable(naive, batched);
+    }
+
+    if (threshold !== null && factor < threshold) {
+      process.exitCode = 1;
+    }
+    return output;
   } finally {
     await app.close();
   }

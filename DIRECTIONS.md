@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-38
+    lenses: unknown
+    - Candidate A1 -- Machine-readable benchmark output (--json flag + CI exit code)
+    - Candidate A2 -- SDL sub-path export for downstream codegen consumers
+    - Candidate A3 -- `bin` entry for `npx graphql-rest-gateway` as an adoption on-ramp
+    - Candidate B1 -- Remove dead `requireAuth` export and unused `BackendStats` interface
+    - Candidate B2 -- Remove REST backend `/__stats` and `/__stats/reset` endpoints
+    - Candidate B3 -- Collapse duplicate fragment-parsing boilerplate across depth-limit, complexity, and queryComplexityPlugin
+    winner: A1
+    ship: pending (not yet decided)
   iter-37
     lenses: unknown
     - Candidate B1 -- Expose computed query cost and depth in response extensions
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- SDL sub-path export for downstream codegen consumers
     - Candidate B3 -- `bin` entry for `npx graphql-rest-gateway` as an adoption on-ramp
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 93a6e1c
   iter-36
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Root-level Query.review(id) entry point
@@ -151,4 +161,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-15 scouted iterations
+16 scouted iterations

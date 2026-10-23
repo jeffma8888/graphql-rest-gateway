@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-209%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-222%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -78,7 +78,7 @@ Other entry points:
 | --- | --- |
 | `npm start` | REST backend + GraphQL gateway in one process (GraphiQL) |
 | `npm run backend` | Just the bundled REST backend (`REST_PORT`, `REST_LATENCY_MS`) |
-| `npm run benchmark` | Prints the naive-vs-batched downstream call table |
+| `npm run benchmark` | Prints the naive-vs-batched downstream call table (`--json` for machine-readable output, `--threshold N` exits 1 when factor < N) |
 | `npm test` | Full test suite (unit + integration + N+1 regression) |
 | `npm run coverage` | Tests with an istanbul coverage report |
 | `npm run codegen` | Regenerate TS types from `schema.graphql` |
@@ -226,7 +226,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 209 tests across 20 files (Vitest), all green:
+`npm test` — 222 tests across 21 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
