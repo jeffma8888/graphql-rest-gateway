@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-41
+    lenses: unknown
+    - Candidate A1 — Document GatewayOptions/BackendOptions in README programmatic-usage section with drift guard
+    - Candidate A2 — README section 9 post-launch design decisions (cross-loader priming, validation cache, scope-based auth)
+    - Candidate A3 — README "Error contract" reference table with drift guard
+    - Candidate B1 — Root-level Query.review(id) entry point
+    - Candidate B2 — Paginated Query.books(first, after) Relay connection
+    - Candidate B3 — Query.search(term) union-type cross-entity search
+    winner: A1
+    ship: pending (not yet decided)
   iter-40
     lenses: unknown
     - Candidate A1 — Deduplicate validation-phase AST walks (share computed cost+depth with the metrics plugin)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B1 — Document cross-loader priming and index-based lookups in README section 7
     - Candidate C1 — Expand README section 9 with post-launch design decisions
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 9b0ebeb
   iter-38
     lenses: unknown
     - Candidate A1 -- Machine-readable benchmark output (--json flag + CI exit code)
@@ -171,4 +181,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-17 scouted iterations
+18 scouted iterations

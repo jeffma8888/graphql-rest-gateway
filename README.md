@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-238%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-260%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -115,7 +115,26 @@ const health = await gateway.fetch('http://localhost/healthz');
 await gateway.close();
 ```
 
-Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `schema`.
+#### Options reference
+
+**`GatewayOptions`** — passed to `createGateway(opts)`:
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend |
+| `maxDepth` | `number` | `10` | Maximum allowed query nesting depth |
+| `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out) |
+| `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode (`BATCHED` or `NAIVE`) |
+| `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) |
+
+**`BackendOptions`** — passed to `buildBackend(opts)`:
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `latencyMs` | `number` | `10` | Artificial latency added to every data request (ms) |
+| `forceCloseConnections` | `boolean` | `false` | Destroy idle keep-alive sockets on close instead of waiting for timeout |
+
+Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `BackendOptions`, `schema`.
 
 ---
 
@@ -226,7 +245,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 238 tests across 22 files (Vitest), all green:
+`npm test` — 260 tests across 23 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

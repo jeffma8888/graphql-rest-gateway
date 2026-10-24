@@ -35,3 +35,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 13 | Typed DOWNSTREAM_ERROR for non-OK HTTP responses | done | 36 |
 | 14 | Query cost and depth in response extensions | done | 37 |
 | 15 | Deduplicate validation-phase AST walks (shared cache) | done | 40 |
+| 16 | GatewayOptions/BackendOptions API reference + drift guard | done | 41 |
