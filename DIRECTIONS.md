@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-52
+    lenses: unknown
+    - Candidate A1 — Replace Buffer-based cursor encoding with native btoa/atob
+    - Candidate A2 — Healthz fast-path: skip URL parsing on non-healthz requests
+    - Candidate A3 — Benchmark warm-up isolation and multi-run percentile statistics
+    - Candidate B1 — README "Error contract" quick-reference table with drift guard
+    - Candidate B2 — Fix stale README coverage figures (badge + section 8 text)
+    - Candidate B3 — SDL `Review.reviewer` description: add `pii` scope requirement
+    winner: B3
+    ship: pending (not yet decided)
   iter-41
     lenses: unknown
     - Candidate A1 — Document GatewayOptions/BackendOptions in README programmatic-usage section with drift guard
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 — Paginated Query.books(first, after) Relay connection
     - Candidate B3 — Query.search(term) union-type cross-entity search
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 065a2ad
   iter-40
     lenses: unknown
     - Candidate A1 — Deduplicate validation-phase AST walks (share computed cost+depth with the metrics plugin)
@@ -181,4 +191,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-18 scouted iterations
+19 scouted iterations

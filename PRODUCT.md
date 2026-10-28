@@ -36,3 +36,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 14 | Query cost and depth in response extensions | done | 37 |
 | 15 | Deduplicate validation-phase AST walks (shared cache) | done | 40 |
 | 16 | GatewayOptions/BackendOptions API reference + drift guard | done | 41 |
+| 17 | SDL Review.reviewer doc-comment pii scope fix + drift guard | done | 52 |

@@ -44,7 +44,8 @@ type Review {
   body: String!
   """
   Reviewer display name. Demonstrates auth-context threading: redacted to
-  "REDACTED" unless the request carries a valid bearer token.
+  "REDACTED" unless the request carries a valid bearer token AND the `pii`
+  scope is present.
   """
   reviewer: String!
   "The book this review is for (batched by book id)."
