@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-313%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -76,7 +76,7 @@ Other entry points:
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | REST backend + GraphQL gateway in one process (GraphiQL) |
+| `npm start` | GraphQL gateway (GraphiQL) in front of the bundled REST backend, or your own via `REST_BASE_URL` (see below) |
 | `npm run backend` | Just the bundled REST backend (`REST_PORT`, `REST_LATENCY_MS`) |
 | `npm run benchmark` | Prints the naive-vs-batched downstream call table (`--json` for machine-readable output, `--threshold N` exits 1 when factor < N) |
 | `npm test` | Full test suite (unit + integration + N+1 regression) |
@@ -85,6 +85,33 @@ Other entry points:
 | `npm run build` | Type-check + emit to `dist/` |
 
 > `reviewer` is redacted to `REDACTED` unless the request carries a bearer token with the `pii` scope. Send header `Authorization: Bearer user:42:pii` (see [Auth context](#auth-context)) to reveal it.
+
+### Front your own REST service (`npm start` environment)
+
+`npm start` boots the bundled demo backend unless `REST_BASE_URL` is set. In that case it fronts the service you already run, which is the strangler-fig on-ramp. Every variable is validated before anything listens. An invalid value exits 1 with a message naming the variable. Unset or empty means "use the default".
+
+| Variable | Rule | Default |
+| --- | --- | --- |
+| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend | unset → bundled backend |
+| `PORT` | non-negative integer (`0` = random port) | `4000` |
+| `REST_LATENCY_MS` | non-negative integer, bundled mode only (ignored with `REST_BASE_URL`) | `25` |
+| `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
+| `MAX_COMPLEXITY` | positive integer → `maxComplexity` | `1000` |
+| `DOWNSTREAM_TIMEOUT_MS` | positive integer → `downstreamTimeoutMs` | `30000` |
+
+Two-terminal example (the backend runs in its own process, and the gateway fronts it):
+
+```bash
+# terminal 1
+npm run backend
+# terminal 2
+REST_BASE_URL=http://127.0.0.1:4001 npm start
+# -> REST backend (external): http://127.0.0.1:4001
+# -> GraphQL gateway + GraphiQL: http://localhost:4000/graphql
+# limits combine the same way: MAX_COMPLEXITY=500 REST_BASE_URL=http://127.0.0.1:4001 npm start
+```
+
+> An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. Route paths are absolute, so any path prefix in `REST_BASE_URL` (e.g. `/api/v1`) is dropped. Use an origin-only URL.
 
 ### Programmatic usage
 
@@ -249,7 +276,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 313 tests across 26 files (Vitest), all green:
+`npm test` — 350 tests across 27 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

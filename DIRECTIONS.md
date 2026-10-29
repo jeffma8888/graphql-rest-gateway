@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-55
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- The cost estimate is not an upper bound: it ignores the SDL default `first: 10` and under-counts `first <= 0`, which the backend serves as a full page
+    - Candidate A2 -- Typed `DOWNSTREAM_UNAVAILABLE` for refused/reset/DNS failures (finish the downstream error taxonomy)
+    - Candidate A3 -- Strict canonical cursor decoding: reject non-canonical and out-of-range cursors with BAD_CURSOR
+    - Candidate B1 -- `npm start` honours `REST_BASE_URL` so the gateway can front a REST service the user already runs (the strangler-fig on-ramp)
+    - Candidate B2 -- Benchmark drives the real gateway and reads `extensions.downstreamCalls.total`, plus a `--max-calls N` CI gate for a user's own operation
+    - Candidate B3 -- Export the error-code contract (`GatewayErrorCode` + response-extension types) from the library entry point, and make the README drift guard consult it
+    winner: B1
+    ship: pending (not yet decided)
   iter-54
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Per-request downstream call budget: `maxDownstreamCalls` → typed `DOWNSTREAM_BUDGET_EXCEEDED`
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Validate `first` (reject negative, clamp the estimator) so negative aliases can't cancel out cost
     - Candidate B3 -- Typed `DOWNSTREAM_UNAVAILABLE` for refused/reset/DNS failures (finish the downstream error taxonomy)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED a698cd2
   iter-53
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Correct the pagination contract prose: false "out-of-range cursor → BAD_CURSOR" claim + undocumented 100-item page cap
@@ -211,4 +221,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-21 scouted iterations
+22 scouted iterations

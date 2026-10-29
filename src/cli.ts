@@ -1,0 +1,175 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { buildBackend } from './rest-backend/server';
+import { createGateway, type GatewayOptions } from './gateway/server';
+
+/**
+ * CLI composition for `npm start`, kept free of import-time side effects (no
+ * listeners, no `process.on`, no `process.exit`) so tests can boot and tear it
+ * down in-process. `src/index.ts` owns signals and exit codes.
+ */
+
+/** Handle to a gateway started by {@link startFromEnv}. */
+export interface RunningGateway {
+  /** `http://localhost:<actualPort>/graphql` — the real port, even when `PORT=0`. */
+  url: string;
+  /** External: `REST_BASE_URL` exactly as given. Bundled: the bundled backend's listen URL. */
+  restBaseUrl: string;
+  backend: 'bundled' | 'external';
+  /** Stops what this call started; an external backend is never touched. */
+  close(): Promise<void>;
+}
+
+type Env = Record<string, string | undefined>;
+
+const DEFAULT_PORT = 4000;
+const DEFAULT_REST_LATENCY_MS = 25;
+const MAX_PORT = 65535;
+
+/** Unset and `''` both mean "use the default", so `VAR= npm start` behaves like omitting it. */
+function isUnset(raw: string | undefined): raw is undefined | '' {
+  return raw === undefined || raw === '';
+}
+
+/**
+ * Strict decimal-integer parse. `Number.parseInt` would silently accept
+ * `'1.5'` or `'10abc'`, which is exactly the silent misconfiguration a
+ * fail-fast CLI exists to prevent.
+ */
+function readInt(name: string, raw: string | undefined, min: 0 | 1): number | undefined {
+  if (isUnset(raw)) return undefined;
+  const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value < min) {
+    const kind = min === 0 ? 'a non-negative' : 'a positive';
+    throw new Error(`${name} must be ${kind} decimal integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
+/** Only http(s) makes sense for a REST backend; `localhost:4001` parses as protocol `localhost:`. */
+function readRestBaseUrl(raw: string | undefined): string | undefined {
+  if (isUnset(raw)) return undefined;
+  let protocol: string;
+  try {
+    protocol = new URL(raw).protocol;
+  } catch {
+    throw new Error(`REST_BASE_URL must be an absolute http(s) URL, got ${JSON.stringify(raw)}`);
+  }
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`REST_BASE_URL must use http: or https:, got ${JSON.stringify(raw)}`);
+  }
+  return raw;
+}
+
+interface CliConfig {
+  port: number;
+  /** Undefined → boot the bundled backend. */
+  externalBaseUrl: string | undefined;
+  /** Only meaningful (and only validated) in bundled mode. */
+  restLatencyMs: number;
+  limits: Omit<GatewayOptions, 'restBaseUrl' | 'loaderOptions'>;
+}
+
+/** Validates every variable up front so a bad value never leaves a half-started process. */
+function parseEnv(env: Env): CliConfig {
+  const externalBaseUrl = readRestBaseUrl(env.REST_BASE_URL);
+  const port = readInt('PORT', env.PORT, 0) ?? DEFAULT_PORT;
+  if (port > MAX_PORT) throw new Error(`PORT must be <= ${MAX_PORT}, got ${JSON.stringify(env.PORT)}`);
+  const restLatencyMs =
+    externalBaseUrl === undefined
+      ? (readInt('REST_LATENCY_MS', env.REST_LATENCY_MS, 0) ?? DEFAULT_REST_LATENCY_MS)
+      : DEFAULT_REST_LATENCY_MS;
+  return {
+    port,
+    externalBaseUrl,
+    restLatencyMs,
+    limits: {
+      maxDepth: readInt('MAX_DEPTH', env.MAX_DEPTH, 1),
+      maxComplexity: readInt('MAX_COMPLEXITY', env.MAX_COMPLEXITY, 1),
+      downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1),
+    },
+  };
+}
+
+/** Promise wrapper so listen errors (EADDRINUSE) reject instead of crashing via an unhandled 'error'. */
+function listen(server: Server, port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => {
+      server.off('error', reject);
+      resolve((server.address() as AddressInfo).port);
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+    // Idle keep-alive sockets would otherwise hold close() open until they time out.
+    server.closeIdleConnections();
+  });
+}
+
+/**
+ * Boots the gateway from environment variables: in front of `REST_BASE_URL`
+ * when set (the strangler-fig on-ramp), otherwise in front of the bundled
+ * demo backend. Rejects before anything listens if any variable is invalid.
+ */
+export async function startFromEnv(
+  env: Env,
+  // eslint-disable-next-line no-console
+  log: (line: string) => void = (line) => console.log(line),
+): Promise<RunningGateway> {
+  const config = parseEnv(env);
+
+  // forceCloseConnections: the gateway's own keep-alive sockets must not stall shutdown.
+  const bundled =
+    config.externalBaseUrl === undefined
+      ? buildBackend({ latencyMs: config.restLatencyMs, forceCloseConnections: true }).app
+      : undefined;
+  const restBaseUrl = bundled
+    ? await bundled.listen({ port: 0, host: '127.0.0.1' })
+    : (config.externalBaseUrl as string);
+
+  const gateway = createGateway({ restBaseUrl, ...config.limits });
+  const server = createServer(gateway.yoga);
+  let port: number;
+  try {
+    port = await listen(server, config.port);
+  } catch (err) {
+    await gateway.close();
+    await bundled?.close();
+    throw err;
+  }
+
+  let closing: Promise<void> | undefined;
+  const url = `http://localhost:${port}/graphql`;
+  log(
+    bundled
+      ? `REST backend (bundled): ${restBaseUrl} (latency ${config.restLatencyMs}ms/request)`
+      : `REST backend (external): ${restBaseUrl}`,
+  );
+  log(`GraphQL gateway + GraphiQL: ${url}`);
+
+  return {
+    url,
+    restBaseUrl,
+    backend: bundled ? 'bundled' : 'external',
+    // Memoized so a double Ctrl-C (SIGINT + SIGINT/SIGTERM) shares one shutdown;
+    // each step runs even if an earlier one rejects, so no listener can leak.
+    close(): Promise<void> {
+      closing ??= (async () => {
+        try {
+          await gateway.close();
+        } finally {
+          try {
+            await closeServer(server);
+          } finally {
+            await bundled?.close();
+          }
+        }
+      })();
+      return closing;
+    },
+  };
+}
