@@ -1,10 +1,15 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
-import { Kind, type ExecutionResult, type DefinitionNode } from 'graphql';
+import { getOperationAST, type ExecutionResult } from 'graphql';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
 import type { LoaderOptions } from './loaders';
 import { depthLimit, measureDepth } from './security/depth-limit';
-import { complexityLimit, estimateComplexity } from './security/complexity';
+import {
+  complexityLimit,
+  complexityError,
+  estimateComplexity,
+  variableResolver,
+} from './security/complexity';
 import { getValidationResult, buildFragmentMap } from './security/validation-cache';
 
 export interface GatewayOptions {
@@ -50,9 +55,18 @@ function healthzPlugin(): Plugin {
   };
 }
 
-function queryComplexityPlugin(defaultListSize: number): Plugin {
+/**
+ * Reports `extensions.queryComplexity` and enforces `maxComplexity` for
+ * variable-dependent operations. WHY here: validation rules never see
+ * variable values, so `authors(first: $n)` is only knowable at execute time.
+ * Rejecting via `setResultAndStopExecution` happens before any resolver (zero
+ * downstream calls) and, because this plugin precedes `downstreamCallsPlugin`,
+ * the rejection carries no extensions -- the same shape as a validation
+ * rejection. The variable-resolved cost is per request and never cached.
+ */
+function queryComplexityPlugin(maxComplexity: number, defaultListSize: number): Plugin {
   return {
-    onExecute({ args }) {
+    onExecute({ args, setResultAndStopExecution }) {
       const doc = args.document;
       const gqlSchema = args.schema;
       const cached = getValidationResult(doc);
@@ -64,8 +78,9 @@ function queryComplexityPlugin(defaultListSize: number): Plugin {
         depth = cached.depth;
       } else {
         const fragments = cached?.fragments ?? buildFragmentMap(doc);
-        const op = doc.definitions.find((d: DefinitionNode) => d.kind === Kind.OPERATION_DEFINITION);
-        if (!op || op.kind !== Kind.OPERATION_DEFINITION) return;
+        // The operation actually being executed, not merely the first in the document.
+        const op = getOperationAST(doc, args.operationName);
+        if (!op) return;
         const rootType =
           op.operation === 'query'
             ? gqlSchema.getQueryType()
@@ -78,8 +93,13 @@ function queryComplexityPlugin(defaultListSize: number): Plugin {
           (name) => gqlSchema.getType(name) ?? undefined,
           fragments,
           defaultListSize,
+          variableResolver(op, args.variableValues),
         );
         depth = measureDepth(op.selectionSet, fragments);
+        if (cost > maxComplexity) {
+          setResultAndStopExecution({ errors: [complexityError(cost, maxComplexity, op)] });
+          return;
+        }
       }
 
       return {
@@ -149,7 +169,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
     plugins: [
       healthzPlugin(),
       securityPlugin(maxDepth, maxComplexity),
-      queryComplexityPlugin(5),
+      queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),
     ],
     graphiql: {

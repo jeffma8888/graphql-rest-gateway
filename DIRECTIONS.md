@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-54
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Per-request downstream call budget: `maxDownstreamCalls` → typed `DOWNSTREAM_BUDGET_EXCEEDED`
+    - Candidate A2 -- `Book.reviewCount: Int!` and `Book.averageRating: Float` aggregates that cost zero extra downstream calls
+    - Candidate A3 -- Declarative `@requiresScope(scope: String!)` SDL directive replacing the hard-coded `pii` check
+    - Candidate B1 -- Complexity limit honours `first` passed as a variable (close the variables bypass)
+    - Candidate B2 -- Validate `first` (reject negative, clamp the estimator) so negative aliases can't cancel out cost
+    - Candidate B3 -- Typed `DOWNSTREAM_UNAVAILABLE` for refused/reset/DNS failures (finish the downstream error taxonomy)
+    winner: B1
+    ship: pending (not yet decided)
   iter-53
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Correct the pagination contract prose: false "out-of-range cursor → BAD_CURSOR" claim + undocumented 100-item page cap
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Aggregate fields `Book.reviewCount: Int!` and `Book.averageRating: Float` with zero extra downstream calls
     - Candidate B3 -- Opt-in shared TTL entity cache behind the request-scoped loaders (roadmap item 9)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 75459ca
   iter-52
     lenses: unknown
     - Candidate A1 — Replace Buffer-based cursor encoding with native btoa/atob
@@ -201,4 +211,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-20 scouted iterations
+21 scouted iterations

@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-284%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-313%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -220,6 +220,7 @@ The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true,
 Two custom GraphQL **validation rules** run before execution (`src/gateway/security/`):
 - **Depth limit** rejects queries nested beyond `maxDepth` (default 10). Follows fragment spreads; ignores introspection meta-fields so GraphiQL keeps working.
 - **Complexity/cost limit** rejects shallow-but-wide queries (`authors(first: 10000)`). Each field costs 1; list fields multiply their subtree by an estimated fan-out (`first`/`last` when present, else a default). Relay wrappers (`edges`/`nodes`/`pageInfo`) get a multiplier of 1 to avoid double-counting the connection's `first`. It's a conservative upper bound — exactly what you want for admission control.
+  - `first`/`last` supplied as **variables** (`authors(first: $n)`) are counted with their **runtime values** (falling back to the operation's variable default; an omitted or `null` variable counts like an omitted argument). Validation rules can't see variable values, so for variable-dependent operations the same check runs at the start of execution, before any resolver or downstream call, and rejects with the identical `QUERY_TOO_COMPLEX` error. Multi-operation documents are likewise costed at execute time, against the operation selected by `operationName` only. Negative `first`/`last` values (literal or variable) count as **0**, so an alias such as `authors(first: -1000)` can't drive the total cost negative.
 
 Both surface a typed error (`extensions.code = QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) and are covered by unit + HTTP integration tests.
 
@@ -248,7 +249,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 284 tests across 25 files (Vitest), all green:
+`npm test` — 313 tests across 26 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

@@ -38,3 +38,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 16 | GatewayOptions/BackendOptions API reference + drift guard | done | 41 |
 | 17 | SDL Review.reviewer doc-comment pii scope fix + drift guard | done | 52 |
 | 18 | Per-response downstream call count (`extensions.downstreamCalls.total`) | done | 53 |
+| 19 | Complexity limit honours variable `first`/`last` + non-negative cost clamp | done | 54 |
