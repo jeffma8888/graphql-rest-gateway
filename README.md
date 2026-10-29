@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-270%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-284%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -235,17 +235,20 @@ When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), t
 ### Query complexity metrics
 Every successful response includes `extensions.queryComplexity` with numeric `cost` and `depth` fields — the same values the depth and complexity validation rules compute. Integrators can observe real traffic to tune `maxDepth`/`maxComplexity`, alert on creeping cost before clients trip the hard limit, and prove exactly what each query costs. When a query is rejected by the validation rules (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`), the `queryComplexity` extension is **not** injected — the rejection error already carries the relevant numbers.
 
+### Downstream call metrics
+Every executed response also includes `extensions.downstreamCalls` with a single `total` field: the exact number of downstream REST calls **this request** attempted (including any that failed or timed out), read from the request-scoped `RestClient` counter. It sits next to `queryComplexity`, so the cost estimate and the measured cost appear together: the nested sample query reports `{ "total": 3 }` with batching and `21` with naive loaders. The count is per request, not cumulative, and concurrent requests never share it. Partial-error responses still carry it. Queries rejected by validation (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) make no downstream calls and do **not** get the extension. A per-path breakdown is deliberately left out so backend topology is not exposed to edge clients.
+
 ### <a name="auth-context"></a>Auth context
 A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token; unauthenticated callers receive a typed error (`extensions.code = UNAUTHENTICATED`).
 
 ### Observability
-The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. This is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
+The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. The per-request gateway count is surfaced to clients as [`extensions.downstreamCalls`](#downstream-call-metrics). This is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
 
 ---
 
 ## 8. Testing
 
-`npm test` — 270 tests across 24 files (Vitest), all green:
+`npm test` — 284 tests across 25 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

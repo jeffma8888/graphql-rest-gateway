@@ -99,6 +99,36 @@ function queryComplexityPlugin(defaultListSize: number): Plugin {
   };
 }
 
+/**
+ * Injects `extensions.downstreamCalls.total`: the measured number of REST calls
+ * this request attempted (incl. failed/timed-out), next to `queryComplexity`'s estimate. WHY: it turns the
+ * batching claim into proof on every live response. Safe to read per request
+ * because `createContext` builds a fresh `RestClient` (and counter) each time.
+ * Only `total` is exposed -- a per-path breakdown would leak backend topology
+ * to edge clients. Validation-rejected queries never reach `onExecute`, so
+ * they carry no extension.
+ */
+function downstreamCallsPlugin(): Plugin<GatewayContext> {
+  return {
+    onExecute({ args }) {
+      const { restClient } = args.contextValue;
+      return {
+        onExecuteDone({ result, setResult }) {
+          if (Symbol.asyncIterator in Object(result)) return;
+          const execResult = result as ExecutionResult;
+          setResult({
+            ...execResult,
+            extensions: {
+              ...execResult.extensions,
+              downstreamCalls: { total: restClient.stats.total },
+            },
+          });
+        },
+      };
+    },
+  };
+}
+
 export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
@@ -116,7 +146,12 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
       }),
-    plugins: [healthzPlugin(), securityPlugin(maxDepth, maxComplexity), queryComplexityPlugin(5)],
+    plugins: [
+      healthzPlugin(),
+      securityPlugin(maxDepth, maxComplexity),
+      queryComplexityPlugin(5),
+      downstreamCallsPlugin(),
+    ],
     graphiql: {
       title: 'graphql-rest-gateway',
       defaultQuery: `# Nested query -- one call from the client, batched downstream.
