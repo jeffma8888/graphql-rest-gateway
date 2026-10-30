@@ -50,6 +50,56 @@ export function validateMaxDownstreamCalls(value: number | undefined): void {
   }
 }
 
+/** RFC 9110 `token`: the only legal characters in a header field name. */
+const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/**
+ * Connection-scoped/framing headers. WHY rejected: they describe the edge
+ * hop, not the caller; copying `host` or `content-length` onto a different
+ * downstream request would mis-route or corrupt it (and fetch forbids most).
+ */
+const HOP_BY_HOP = new Set([
+  'host',
+  'connection',
+  'content-length',
+  'transfer-encoding',
+  'keep-alive',
+  'upgrade',
+  'te',
+  'trailer',
+  'proxy-connection',
+  // Not hop-by-hop, but Node's undici fetch throws on it ("expect header not
+  // supported"), so forwarding it would fail every downstream call.
+  'expect',
+]);
+
+/**
+ * Validates and normalizes a header-forwarding allowlist to lowercase names.
+ * WHY a throw at configuration time: a typo'd or illegal name would otherwise
+ * surface only as every downstream call silently missing its credential.
+ * `label` names the setting in the message (`forwardHeaders` for the library,
+ * `FORWARD_HEADERS` for the CLI) so the operator knows what to fix.
+ */
+export function validateForwardHeaders(
+  names: readonly string[] | undefined,
+  label = 'forwardHeaders',
+): string[] {
+  if (names === undefined) return [];
+  if (!Array.isArray(names)) throw new TypeError(`${label} must be an array of header names`);
+  const normalized: string[] = [];
+  for (const name of names) {
+    if (typeof name !== 'string' || !HTTP_TOKEN.test(name)) {
+      throw new Error(`${label} entry ${JSON.stringify(name)} is not a valid HTTP header name`);
+    }
+    const lower = name.toLowerCase();
+    if (HOP_BY_HOP.has(lower)) {
+      throw new Error(`${label} entry ${JSON.stringify(name)} is a hop-by-hop header and cannot be forwarded`);
+    }
+    if (!normalized.includes(lower)) normalized.push(lower);
+  }
+  return normalized;
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -60,11 +110,16 @@ export class RestClient {
    *   unlimited). WHY on the client: it is already the per-request counter
    *   behind `extensions.downstreamCalls`, so the budget is enforced on the
    *   measured number whatever the query shape, batching mode or prefetch path.
+   * @param headers Edge headers to send on every call (already allowlisted by
+   *   the caller). WHY on the client: every downstream path -- batched, naive,
+   *   list, prefetch -- funnels through `get`, so none can forget them, and the
+   *   client is per request, so one caller's credential never reaches another's.
    */
   constructor(
     private readonly baseUrl: string,
     timeoutMs?: number,
     private readonly maxCalls?: number,
+    private readonly headers: Readonly<Record<string, string>> = {},
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -101,7 +156,7 @@ export class RestClient {
 
     let res: Response;
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs) });
+      res = await fetch(url, { headers: this.headers, signal: AbortSignal.timeout(this.timeoutMs) });
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'TimeoutError') {
         throw new GraphQLError(`Downstream request to ${path} timed out after ${this.timeoutMs}ms`, {

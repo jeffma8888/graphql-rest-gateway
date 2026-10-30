@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-60
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Caller identity propagation: opt-in `forwardHeaders` allowlist so downstream REST calls carry the edge request's `authorization` / `x-request-id`
+    - Candidate A2 -- `addReview` mutation: the gateway's first write path (REST POST), with request-scoped loader invalidation so the same response shows the write
+    - Candidate A3 -- Opt-in per-request downstream trace: `extensions.downstreamCalls.calls[]` with `{ route, startMs, durationMs, status }` behind `traceDownstream: true` (roadmap row 10, dependency-free first slice)
+    - Candidate B1 -- Close the zero-cost meta-field hole: each `__schema` / `__type` / `__typename` field node costs 1 (never list-multiplied), so aliasing introspection can't amplify past `maxComplexity`
+    - Candidate B2 -- Typed `OPERATION_NOT_SUPPORTED` for `mutation` / `subscription` operations, rejected at validation with 0 downstream calls
+    - Candidate B3 -- Typed `DOWNSTREAM_UNAVAILABLE` for refused/reset/DNS downstream failures (no more `"Unexpected error."` + logged stack)
+    winner: A1
+    ship: pending (not yet decided)
   iter-59
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Write the downstream REST contract down: an external `REST_BASE_URL` service must match query encodings and response shapes that only exist in code comments today
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `addReview` mutation: the gateway's first write path, with loader invalidation so the response shows the write
     - Candidate B3 -- Variable-driven bulk lookup `Query.books(ids: [ID!]!): [Book]!` (order-preserving, null for a missing id, one downstream call, max 100 ids)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED d248cfe
   iter-58
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Root-by-id lookahead prefetch: `author(id){ books }` and `book(id){ reviews }` start the child batch in the same tick as the root fetch
@@ -261,4 +271,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-26 scouted iterations
+27 scouted iterations

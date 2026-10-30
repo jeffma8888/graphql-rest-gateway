@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { buildBackend } from './rest-backend/server';
 import { createGateway, type GatewayOptions } from './gateway/server';
+import { validateForwardHeaders } from './gateway/datasources/rest-client';
 
 /**
  * CLI composition for `npm start`, kept free of import-time side effects (no
@@ -69,6 +70,17 @@ function readRestBaseUrl(raw: string | undefined): string | undefined {
   return raw;
 }
 
+/**
+ * Comma-separated header allowlist. Whitespace is trimmed and empty entries
+ * (a trailing comma) dropped, so `' authorization , x-request-id ,'` is two
+ * names; each is then validated like the library option, naming the variable.
+ */
+function readForwardHeaders(raw: string | undefined): string[] | undefined {
+  if (isUnset(raw)) return undefined;
+  const names = raw.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  return names.length === 0 ? undefined : validateForwardHeaders(names, 'FORWARD_HEADERS');
+}
+
 interface CliConfig {
   port: number;
   /** Undefined → boot the bundled backend. */
@@ -96,6 +108,7 @@ function parseEnv(env: Env): CliConfig {
       maxComplexity: readInt('MAX_COMPLEXITY', env.MAX_COMPLEXITY, 1),
       downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1),
       maxDownstreamCalls: readInt('MAX_DOWNSTREAM_CALLS', env.MAX_DOWNSTREAM_CALLS, 1),
+      forwardHeaders: readForwardHeaders(env.FORWARD_HEADERS),
     },
   };
 }

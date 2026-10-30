@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-435%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-481%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -99,6 +99,7 @@ Other entry points:
 | `MAX_COMPLEXITY` | positive integer → `maxComplexity` | `1000` |
 | `DOWNSTREAM_TIMEOUT_MS` | positive integer → `downstreamTimeoutMs` | `30000` |
 | `MAX_DOWNSTREAM_CALLS` | positive integer → `maxDownstreamCalls` | unset → unlimited |
+| `FORWARD_HEADERS` | comma-separated header names → `forwardHeaders` (whitespace trimmed, empty entries ignored) | unset → forward nothing |
 
 Two-terminal example (the backend runs in its own process, and the gateway fronts it):
 
@@ -155,6 +156,7 @@ await gateway.close();
 | `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode (`BATCHED` or `NAIVE`) |
 | `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) |
 | `maxDownstreamCalls` | `number` | unlimited | Per-request cap on downstream REST calls sent; a call past it fails with `DOWNSTREAM_BUDGET_EXCEEDED` (positive integer, else `RangeError`) |
+| `forwardHeaders` | `readonly string[]` | `[]` (none) | Edge request headers (case-insensitive) copied onto every downstream REST call of the same request, e.g. `['authorization', 'x-request-id']`; invalid or hop-by-hop names throw |
 
 **`BackendOptions`** — passed to `buildBackend(opts)`:
 
@@ -266,6 +268,9 @@ Every outbound REST call is guarded by a per-request deadline (`downstreamTimeou
 
 WHY it complements `maxComplexity`: the cost model is an estimate of response size, not of downstream fan-out. List pages are not batched, so 100 aliases of `authors(first: 0, after: "<distinct cursor>") { totalCount }` cost only **100** yet make **100** downstream calls, while the legitimate nested sample query costs **351** and makes just **3**. No complexity limit can stop the first without rejecting the second; a cap on the *measured* call count can. Validation-time `maxComplexity` still rejects oversized queries before any call is made. The budget is the backstop for whatever shape gets through.
 
+### Forwarding edge headers downstream
+A legacy REST service usually authorizes each request itself and correlates logs by request id, so the gateway can pass selected caller headers through: `forwardHeaders: ['authorization', 'x-request-id']` (env `FORWARD_HEADERS=authorization,x-request-id`). Forwarding is opt-in and allowlist-only: nothing is forwarded by default, only the listed names (matched case-insensitively) are copied, and a header the caller did not send is not sent. Values are taken from each edge request, so one caller's token never reaches another caller's downstream calls; every path (batched, naive, list pages, lookahead prefetch) carries them. Forwarded credentials are sent to the configured downstream host (`restBaseUrl` / `REST_BASE_URL`), so only list headers that host is meant to see. Hop-by-hop and framing names (`host`, `connection`, `content-length`, `transfer-encoding`, `keep-alive`, `upgrade`, `te`, `trailer`, `proxy-connection`), `expect` (Node's fetch refuses it, so every downstream call would fail) and names that are not valid HTTP tokens are rejected at startup.
+
 ### Downstream error
 When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), the gateway surfaces a typed error (`extensions.code = DOWNSTREAM_ERROR`) with `extensions.status` carrying the HTTP status code. The error message includes the status, status text, and the failed path, letting clients distinguish "the backend returned an error" from "the query itself was invalid."
 
@@ -285,7 +290,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 435 tests across 30 files (Vitest), all green:
+`npm test` — 481 tests across 31 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

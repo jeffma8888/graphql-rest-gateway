@@ -2,7 +2,7 @@ import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, type ExecutionResult } from 'graphql';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
-import { validateMaxDownstreamCalls } from './datasources/rest-client';
+import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client';
 import type { LoaderOptions } from './loaders';
 import { depthLimit, measureDepth } from './security/depth-limit';
 import {
@@ -26,6 +26,13 @@ export interface GatewayOptions {
    * Unlimited when omitted.
    */
   maxDownstreamCalls?: number;
+  /**
+   * Edge request headers (case-insensitive names) copied onto every downstream
+   * REST call of the same request, e.g. `['authorization', 'x-request-id']`.
+   * Opt-in allowlist: nothing is forwarded when omitted, and a header the
+   * caller did not send is not sent. Invalid or hop-by-hop names throw.
+   */
+  forwardHeaders?: readonly string[];
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -127,6 +134,20 @@ function queryComplexityPlugin(maxComplexity: number, defaultListSize: number): 
 }
 
 /**
+ * Picks the allowlisted headers off one edge request. WHY per request and
+ * only present ones: values belong to that caller alone, and an absent header
+ * must stay absent downstream rather than become an empty credential.
+ */
+function pickHeaders(headers: Headers, names: readonly string[]): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const name of names) {
+    const value = headers.get(name);
+    if (value !== null) picked[name] = value;
+  }
+  return picked;
+}
+
+/**
  * Injects `extensions.downstreamCalls.total`: the measured number of REST calls
  * this request sent (incl. failed/timed-out; calls refused by `maxDownstreamCalls`
  * are not counted), next to `queryComplexity`'s estimate. WHY: it turns the
@@ -159,6 +180,7 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
 
 export function createGateway(opts: GatewayOptions): GatewayServer {
   validateMaxDownstreamCalls(opts.maxDownstreamCalls);
+  const forwardHeaders = validateForwardHeaders(opts.forwardHeaders);
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
 
@@ -175,6 +197,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,
+        downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
       }),
     plugins: [
       healthzPlugin(),
