@@ -31,8 +31,34 @@ export class AuthorService {
   }
 }
 
+/** Normalise a rejection reason so it can be primed into a DataLoader cache. */
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 export class BookService {
-  constructor(private readonly loaders: Loaders) {}
+  constructor(
+    private readonly loaders: Loaders,
+    private readonly prefetch: boolean,
+  ) {}
+
+  /**
+   * Speculatively start `booksForAuthor` so it runs in parallel with the root
+   * by-id fetch. DataLoader clears a key whose batch rejects, so a downstream
+   * failure that lands before the root fetch returns would otherwise make
+   * `Author.books`' own load() re-issue the failing call. The catch therefore
+   * re-primes the key with the error (prime only writes when the key is
+   * absent and attaches its own no-op catch): the child load reuses that
+   * rejection and the failing route is still called exactly once.
+   * No-op without a loader cache: the child load could not reuse the result.
+   */
+  prefetchBooksForAuthor(authorId: string): void {
+    if (!this.prefetch) return;
+    const loader = this.loaders.booksByAuthorId;
+    loader.load(authorId).catch((err: unknown) => {
+      loader.prime(authorId, toError(err));
+    });
+  }
 
   getBook(id: string): Promise<BookRow | null> {
     return this.loaders.bookById.load(id);
@@ -44,7 +70,19 @@ export class BookService {
 }
 
 export class ReviewService {
-  constructor(private readonly loaders: Loaders) {}
+  constructor(
+    private readonly loaders: Loaders,
+    private readonly prefetch: boolean,
+  ) {}
+
+  /** Same contract as `BookService.prefetchBooksForAuthor`, for `Book.reviews`. */
+  prefetchReviewsForBook(bookId: string): void {
+    if (!this.prefetch) return;
+    const loader = this.loaders.reviewsByBookId;
+    loader.load(bookId).catch((err: unknown) => {
+      loader.prime(bookId, toError(err));
+    });
+  }
 
   reviewsForBook(bookId: string): Promise<ReviewRow[]> {
     return this.loaders.reviewsByBookId.load(bookId);
@@ -57,10 +95,14 @@ export interface Services {
   review: ReviewService;
 }
 
-export function buildServices(ds: DataSources, loaders: Loaders): Services {
+/**
+ * `prefetch` must mirror the loaders' `cache` option: a speculative load only
+ * pays off when the child resolver's later load() is served from that cache.
+ */
+export function buildServices(ds: DataSources, loaders: Loaders, prefetch: boolean): Services {
   return {
     author: new AuthorService(ds, loaders),
-    book: new BookService(loaders),
-    review: new ReviewService(loaders),
+    book: new BookService(loaders, prefetch),
+    review: new ReviewService(loaders, prefetch),
   };
 }

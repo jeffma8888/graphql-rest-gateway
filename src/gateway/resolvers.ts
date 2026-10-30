@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
 import type { Resolvers } from '../generated/graphql';
+import { willResolveChild } from './lookahead';
 
 /**
  * Resolvers are deliberately THIN: they translate a GraphQL field into a single
@@ -9,11 +10,16 @@ import type { Resolvers } from '../generated/graphql';
  * Parent types are the raw REST rows (AuthorRow/BookRow/ReviewRow) via codegen
  * `mappers`; scalar fields (id, name, title, ...) fall through to GraphQL's
  * default field resolver, so only the graph "edges" need explicit resolvers.
+ *
+ * By-id roots also kick off a lookahead prefetch (see `./lookahead`): the
+ * child edge's key is `args.id`, so its batched load need not wait for the
+ * root fetch to return.
  */
 export const resolvers: Resolvers = {
   Query: {
     authors: (_parent, args, ctx) => ctx.services.author.listConnection(args.first ?? 10, args.after),
-    author: async (_parent, args, ctx) => {
+    author: async (_parent, args, ctx, info) => {
+      if (willResolveChild(info, 'books')) ctx.services.book.prefetchBooksForAuthor(args.id);
       const author = await ctx.services.author.getAuthor(args.id);
       if (!author) {
         throw new GraphQLError(`Author ${args.id} not found`, {
@@ -22,7 +28,8 @@ export const resolvers: Resolvers = {
       }
       return author;
     },
-    book: async (_parent, args, ctx) => {
+    book: async (_parent, args, ctx, info) => {
+      if (willResolveChild(info, 'reviews')) ctx.services.review.prefetchReviewsForBook(args.id);
       const book = await ctx.services.book.getBook(args.id);
       if (!book) {
         throw new GraphQLError(`Book ${args.id} not found`, {

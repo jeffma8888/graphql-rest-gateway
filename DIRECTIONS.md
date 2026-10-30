@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-58
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Root-by-id lookahead prefetch: `author(id){ books }` and `book(id){ reviews }` start the child batch in the same tick as the root fetch
+    - Candidate A2 -- Opt-in shared TTL cache for by-id entity rows (`entityCacheTtlMs`), roadmap row 9
+    - Candidate A3 -- Request-scoped dedupe of identical list pages (`a: authors(first:5)` + `b: authors(first:5)` → one `/authors` call)
+    - Candidate B1 -- Coverage figures are 9 points stale and a test pins the stale numbers: tie README, badge and a vitest coverage threshold together
+    - Candidate B2 -- The pagination contract (README section 7 + the SDL description of `first`) promises behaviour the code does not have
+    - Candidate B3 -- "The cost model is a conservative upper bound" is stated in three places and is false by about 10× on the default query shape
+    winner: A1
+    ship: pending (not yet decided)
   iter-57
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One `operationCost` + one execute-phase extensions writer (collapse iter-54's duplicated cost path and fold `downstreamCallsPlugin`)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Opt-in cross-request in-flight coalescing of identical downstream GETs (`coalesceDownstream: true`)
     - Candidate B3 -- Request-scoped dedupe of identical list pages (`a: authors(first:5)` + `b: authors(first:5)` share one `/authors` call)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED e39c496
   iter-56
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- `REST_BASE_URL` honours a path prefix (`http://legacy/api/v1`) instead of silently dropping it
@@ -241,4 +251,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-24 scouted iterations
+25 scouted iterations

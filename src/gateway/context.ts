@@ -55,8 +55,9 @@ export function parseAuth(authorization?: string | null): AuthContext {
 export function createContext(opts: CreateContextOptions): GatewayContext {
   const restClient = opts.restClient ?? new RestClient(opts.restBaseUrl ?? 'http://127.0.0.1:4001', opts.downstreamTimeoutMs);
   const datasources = buildDataSources(restClient);
-  const loaders = buildLoaders(datasources, opts.loaderOptions ?? BATCHED);
-  const services = buildServices(datasources, loaders);
+  const loaderOptions = opts.loaderOptions ?? BATCHED;
+  const loaders = buildLoaders(datasources, loaderOptions);
+  const services = buildServices(datasources, loaders, loaderOptions.cache);
   const auth = parseAuth(opts.authorization);
   return { auth, services, loaders, datasources, restClient };
 }

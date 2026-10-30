@@ -41,3 +41,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 19 | Complexity limit honours variable `first`/`last` + non-negative cost clamp | done | 54 |
 | 20 | `npm start` fronts an external REST service (`REST_BASE_URL`) + limit env vars, fail-fast validated | done | 55 |
 | 21 | Downstream base URL honours a path prefix (`/api/v1`); `REST_BASE_URL` rejects query/fragment | done | 57 |
+| 22 | Root-by-id lookahead prefetch (`author(id){books}`, `book(id){reviews}`): child batch starts with the root fetch | done | 58 |
