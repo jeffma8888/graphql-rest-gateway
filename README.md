@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-481%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-495%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -113,6 +113,8 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 # limits combine the same way: MAX_COMPLEXITY=500 REST_BASE_URL=http://127.0.0.1:4001 npm start
 ```
 
+> **Shutdown.** On SIGTERM/SIGINT, `npm start` stops new work at once: any request that still reaches it gets `503` with `connection: close`, and the port stops accepting connections. In-flight requests drain (bounded at 5 s). Then the remaining sockets, including idle keep-alive ones, are closed and the process exits 0, so a load balancer's reused connections cannot hold shutdown open.
+
 > An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. A path prefix in `REST_BASE_URL` is honoured: `REST_BASE_URL=http://127.0.0.1:4001/api/v1` calls `/api/v1/authors`, `/api/v1/books/by-author`, and so on (trailing slashes are ignored). A query string or fragment in `REST_BASE_URL` is rejected at startup.
 
 ### Programmatic usage
@@ -129,7 +131,9 @@ const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 // Create a gateway (returns { yoga, fetch, close })
 const gateway = createGateway({ restBaseUrl: baseUrl });
 
-// Use gateway.fetch() directly or mount gateway.yoga on any Node HTTP server
+// Use gateway.fetch() directly or mount gateway.yoga on any Node HTTP server.
+// A raw gateway.yoga mount bypasses the shutdown drain; for drain-aware embedding
+// (503 after close(), in-flight requests counted), serve every request through gateway.fetch.
 const res = await gateway.fetch('http://localhost/graphql', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -290,7 +294,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 481 tests across 31 files (Vitest), all green:
+`npm test` — 495 tests across 32 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

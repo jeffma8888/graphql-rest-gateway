@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-61
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- Charge introspection/meta fields in the complexity and depth walkers (each `__schema`/`__type`/`__typename` node costs 1, never list-multiplied)
+    - Candidate A2 -- Typed `DOWNSTREAM_BAD_RESPONSE` when a 2xx downstream body isn't the contract shape (non-JSON, empty, wrong top-level type, null rows)
+    - Candidate A3 -- Parser token cap (`maxTokens`, default ~10k, plus a `MAX_TOKENS` env) so oversized documents are refused before parse/validate allocate
+    - Candidate B1 -- `npm start` serves through the gateway's drain path, so SIGTERM gets the shipped 503 / in-flight drain instead of bypassing it
+    - Candidate B2 -- Opt-in structured access log for `npm start`: one JSON line per GraphQL request (`ACCESS_LOG=json`)
+    - Candidate B3 -- `npm start -- --check` / `--help`: validate and print the resolved config as JSON, then exit without listening
+    winner: B1
+    ship: pending (not yet decided)
   iter-60
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Caller identity propagation: opt-in `forwardHeaders` allowlist so downstream REST calls carry the edge request's `authorization` / `x-request-id`
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Typed `OPERATION_NOT_SUPPORTED` for `mutation` / `subscription` operations, rejected at validation with 0 downstream calls
     - Candidate B3 -- Typed `DOWNSTREAM_UNAVAILABLE` for refused/reset/DNS downstream failures (no more `"Unexpected error."` + logged stack)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 3548755
   iter-59
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Write the downstream REST contract down: an external `REST_BASE_URL` service must match query encodings and response shapes that only exist in code comments today
@@ -271,4 +281,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-27 scouted iterations
+28 scouted iterations

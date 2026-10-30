@@ -44,3 +44,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 22 | Root-by-id lookahead prefetch (`author(id){books}`, `book(id){reviews}`): child batch starts with the root fetch | done | 58 |
 | 23 | Per-request downstream call budget (`maxDownstreamCalls` / `MAX_DOWNSTREAM_CALLS`) → typed `DOWNSTREAM_BUDGET_EXCEEDED` | done | 59 |
 | 24 | Edge header forwarding allowlist (`forwardHeaders` / `FORWARD_HEADERS`) for authenticated downstream REST | done | 60 |
+| 25 | `npm start` serves through the drain path: SIGTERM → 503 + `connection: close`, in-flight drain, prompt keep-alive shutdown | done | 61 |

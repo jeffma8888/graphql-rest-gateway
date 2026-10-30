@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildBackend } from './rest-backend/server';
 import { createGateway, type GatewayOptions } from './gateway/server';
 import { validateForwardHeaders } from './gateway/datasources/rest-client';
+import { createDrainAwareListener } from './http-adapter';
 
 /**
  * CLI composition for `npm start`, kept free of import-time side effects (no
@@ -26,6 +27,8 @@ type Env = Record<string, string | undefined>;
 const DEFAULT_PORT = 4000;
 const DEFAULT_REST_LATENCY_MS = 25;
 const MAX_PORT = 65535;
+/** Same bound as the gateway's in-flight drain: a slow reader cannot hold shutdown open forever. */
+const FLUSH_TIMEOUT_MS = 5000;
 
 /** Unset and `''` both mean "use the default", so `VAR= npm start` behaves like omitting it. */
 function isUnset(raw: string | undefined): raw is undefined | '' {
@@ -124,10 +127,14 @@ function listen(server: Server, port: number): Promise<number> {
   });
 }
 
-function closeServer(server: Server): Promise<void> {
+/**
+ * Stops accepting connections and sweeps the sockets idle right now. Sockets
+ * mid-request are left alone here; they end themselves after their
+ * `connection: close` response, and `closeAllConnections()` catches stragglers.
+ */
+function stopListening(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
-    // Idle keep-alive sockets would otherwise hold close() open until they time out.
     server.closeIdleConnections();
   });
 }
@@ -154,7 +161,10 @@ export async function startFromEnv(
     : (config.externalBaseUrl as string);
 
   const gateway = createGateway({ restBaseUrl, ...config.limits });
-  const server = createServer(gateway.yoga);
+  let shuttingDown = false;
+  // Never `createServer(gateway.yoga)`: that bypasses gateway.fetch's 503 + in-flight drain.
+  const http = createDrainAwareListener((request) => gateway.fetch(request), () => shuttingDown);
+  const server = createServer(http.listener);
   let port: number;
   try {
     port = await listen(server, config.port);
@@ -179,13 +189,22 @@ export async function startFromEnv(
     backend: bundled ? 'bundled' : 'external',
     // Memoized so a double Ctrl-C (SIGINT + SIGINT/SIGTERM) shares one shutdown;
     // each step runs even if an earlier one rejects, so no listener can leak.
+    // Order: refuse new work (503 + connection: close) -> drain in-flight -> let
+    // their responses flush -> destroy what is left, so a keep-alive socket that
+    // went idle after the first sweep cannot hold close() open for keepAliveTimeout.
     close(): Promise<void> {
       closing ??= (async () => {
+        shuttingDown = true;
+        // One shared deadline: a handler stuck past the drain bound must not be waited on twice.
+        const deadline = Date.now() + FLUSH_TIMEOUT_MS;
+        const stopped = stopListening(server);
         try {
           await gateway.close();
+          await http.flushed(Math.max(0, deadline - Date.now()));
         } finally {
+          server.closeAllConnections();
           try {
-            await closeServer(server);
+            await stopped;
           } finally {
             await bundled?.close();
           }
