@@ -18,6 +18,24 @@ export type QueryParams = Record<string, string | number | ReadonlyArray<string>
 /** Default downstream timeout when none is configured (30 seconds). */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * Joins an absolute route path onto the base URL *keeping* the base's path
+ * prefix. WHY not `new URL(path, base)`: WHATWG resolution of an absolute path
+ * discards the base pathname, so a legacy service mounted at `http://h/api/v1`
+ * would silently receive `/authors` and 404. Trailing slashes on the base are
+ * stripped so `/api/v1`, `/api/v1/` and `/api/v1//` all yield `/api/v1/authors`.
+ * The base's query string and fragment are not carried over, as before.
+ * The base is parsed per call (not pre-parsed in the constructor) on purpose:
+ * an invalid base must keep failing at request time, not at construction.
+ */
+function joinBaseUrl(baseUrl: string, path: string): URL {
+  const url = new URL(baseUrl);
+  url.pathname = url.pathname.replace(/\/+$/, '') + path;
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -35,7 +53,7 @@ export class RestClient {
   async get<T>(path: string, params?: QueryParams): Promise<T> {
     this.track(path);
 
-    const url = new URL(path, this.baseUrl);
+    const url = joinBaseUrl(this.baseUrl, path);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value === undefined) continue;

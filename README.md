@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-370%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -92,7 +92,7 @@ Other entry points:
 
 | Variable | Rule | Default |
 | --- | --- | --- |
-| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend | unset → bundled backend |
+| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend; may include a path prefix, no query string or fragment | unset → bundled backend |
 | `PORT` | non-negative integer (`0` = random port) | `4000` |
 | `REST_LATENCY_MS` | non-negative integer, bundled mode only (ignored with `REST_BASE_URL`) | `25` |
 | `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
@@ -111,7 +111,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 # limits combine the same way: MAX_COMPLEXITY=500 REST_BASE_URL=http://127.0.0.1:4001 npm start
 ```
 
-> An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. Route paths are absolute, so any path prefix in `REST_BASE_URL` (e.g. `/api/v1`) is dropped. Use an origin-only URL.
+> An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. A path prefix in `REST_BASE_URL` is honoured: `REST_BASE_URL=http://127.0.0.1:4001/api/v1` calls `/api/v1/authors`, `/api/v1/books/by-author`, and so on (trailing slashes are ignored). A query string or fragment in `REST_BASE_URL` is rejected at startup.
 
 ### Programmatic usage
 
@@ -148,7 +148,7 @@ await gateway.close();
 
 | Property | Type | Default | Description |
 | --- | --- | --- | --- |
-| `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend |
+| `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend; a path prefix such as `/api/v1` is kept; a query string or fragment is ignored |
 | `maxDepth` | `number` | `10` | Maximum allowed query nesting depth |
 | `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out) |
 | `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode (`BATCHED` or `NAIVE`) |
@@ -276,7 +276,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 350 tests across 27 files (Vitest), all green:
+`npm test` — 370 tests across 28 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

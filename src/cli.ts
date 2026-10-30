@@ -46,17 +46,25 @@ function readInt(name: string, raw: string | undefined, min: 0 | 1): number | un
   return value;
 }
 
-/** Only http(s) makes sense for a REST backend; `localhost:4001` parses as protocol `localhost:`. */
+/**
+ * Only http(s) makes sense for a REST backend; `localhost:4001` parses as protocol `localhost:`.
+ * A path prefix (`/api/v1`) is honoured downstream, but a query string or fragment would be
+ * silently discarded on every call, so it is rejected. The raw `?`/`#` check catches a bare
+ * `http://h/?`, whose parsed `search` is empty.
+ */
 function readRestBaseUrl(raw: string | undefined): string | undefined {
   if (isUnset(raw)) return undefined;
-  let protocol: string;
+  let parsed: URL;
   try {
-    protocol = new URL(raw).protocol;
+    parsed = new URL(raw);
   } catch {
     throw new Error(`REST_BASE_URL must be an absolute http(s) URL, got ${JSON.stringify(raw)}`);
   }
-  if (protocol !== 'http:' && protocol !== 'https:') {
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`REST_BASE_URL must use http: or https:, got ${JSON.stringify(raw)}`);
+  }
+  if (parsed.search !== '' || parsed.hash !== '' || /[?#]/.test(raw)) {
+    throw new Error(`REST_BASE_URL must not contain a query string or fragment, got ${JSON.stringify(raw)}`);
   }
   return raw;
 }

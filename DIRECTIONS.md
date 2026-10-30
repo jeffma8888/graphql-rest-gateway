@@ -1,6 +1,26 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-57
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- One `operationCost` + one execute-phase extensions writer (collapse iter-54's duplicated cost path and fold `downstreamCallsPlugin`)
+    - Candidate A2 -- One selection-set walk yields both cost and depth (delete `depth-limit.ts`'s private walker and `measureDepth`)
+    - Candidate A3 -- One integer-env rule for both entry points: `npm run backend` reuses `cli.ts`'s strict parser
+    - Candidate B1 -- Root-entity lookahead prefetch: `author(id){ books }` starts the books batch in parallel with the author fetch (cut one serial round trip)
+    - Candidate B2 -- Opt-in cross-request in-flight coalescing of identical downstream GETs (`coalesceDownstream: true`)
+    - Candidate B3 -- Request-scoped dedupe of identical list pages (`a: authors(first:5)` + `b: authors(first:5)` share one `/authors` call)
+    winner: A1
+    ship: pending (not yet decided)
+  iter-56
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- `REST_BASE_URL` honours a path prefix (`http://legacy/api/v1`) instead of silently dropping it
+    - Candidate A2 -- `/readyz` that actually consults the downstream REST service (keep `/healthz` as liveness)
+    - Candidate A3 -- `npm run benchmark -- --query <file.graphql> --max-calls N`: measure a user's own operation through the real gateway pipeline, against `REST_BASE_URL`
+    - Candidate B1 -- One `operationCost(schema, op, fragments, resolveVariable?)` for both the validation and execute phases
+    - Candidate B2 -- Fold `downstreamCallsPlugin` into the single execute-phase extensions writer
+    - Candidate B3 -- One selection-set walk yields both cost and depth (delete `depth-limit.ts`'s private walker and `measureDepth`)
+    winner: A1
+    ship: unknown
   iter-55
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- The cost estimate is not an upper bound: it ignores the SDL default `first: 10` and under-counts `first <= 0`, which the backend serves as a full page
@@ -10,7 +30,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Benchmark drives the real gateway and reads `extensions.downstreamCalls.total`, plus a `--max-calls N` CI gate for a user's own operation
     - Candidate B3 -- Export the error-code contract (`GatewayErrorCode` + response-extension types) from the library entry point, and make the README drift guard consult it
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED d140c32
   iter-54
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Per-request downstream call budget: `maxDownstreamCalls` → typed `DOWNSTREAM_BUDGET_EXCEEDED`
@@ -221,4 +241,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-22 scouted iterations
+24 scouted iterations
