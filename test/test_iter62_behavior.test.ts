@@ -446,7 +446,12 @@ describe('EB9 no repo pollution, dev paths unchanged', () => {
     );
     expect(r.code).toBe(0);
     const lines = r.stdout.split('\n').filter(Boolean);
-    expect(lines.filter((l) => !l.endsWith('test/test_iter62_behavior.test.ts'))).toEqual([]);
+    // Only NEW per-iteration behavior files (untracked `??` or staged-added `A `) are allowed;
+    // any modified/deleted/renamed tracked test file still fails this guard.
+    const newBehaviorFile = /^(\?\?|A ) test\/test_iter\d+_behavior\.test\.ts$/;
+    expect(
+      lines.filter((l) => !l.endsWith('test/test_iter62_behavior.test.ts') && !newBehaviorFile.test(l)),
+    ).toEqual([]);
     expect(existsSync(path.join(REPO, 'test', 'n-plus-1.test.ts'))).toBe(true);
     expect(existsSync(path.join(REPO, 'test', 'lib-entry.test.ts'))).toBe(true);
   });

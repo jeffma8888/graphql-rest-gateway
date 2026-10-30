@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-63
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- One selection-set walk yields both cost and depth (delete depth-limit.ts's private walker and `measureDepth`)
+    - Candidate A2 -- One `prefetchKey` helper and one `byIdLoader` factory (services.ts / loaders.ts)
+    - Candidate A3 -- One in-flight tracker for `GatewayServer.close()`: a Set of pending requests replaces the counter + single `drainResolve` slot (and fixes the double-close stall it hides)
+    - Candidate B1 -- Multi-root by-id lookahead: aliased `a: author(id) b: author(id)` / `author(id) + book(id)` operations start their child batches in tick 0 (one serial round trip removed, same call count)
+    - Candidate B2 -- Opt-in cross-request in-flight coalescing of identical downstream GETs (`coalesceDownstream: true`), keyed by URL + forwarded headers
+    - Candidate B3 -- Cut the QC suite's critical path from 15.5 s to about 6 s by splitting `test_iter61_behavior.test.ts` along its describe blocks (zero assertion edits)
+    winner: B1
+    ship: pending (not yet decided)
   iter-62
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- The published library entry point actually imports: built `dist/` loads under plain Node ESM and NodeNext TypeScript, and finds `schema.graphql`
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One generic `prefetchKey` helper and one `byIdLoader` factory (services.ts / loaders.ts)
     - Candidate B3 -- Collapse the execute-phase special cases: `getRootType` for the triplicated root ternary, one extensions writer
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 5f0e523
   iter-61
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Charge introspection/meta fields in the complexity and depth walkers (each `__schema`/`__type`/`__typename` node costs 1, never list-multiplied)
@@ -291,4 +301,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-29 scouted iterations
+30 scouted iterations

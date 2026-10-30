@@ -46,3 +46,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 24 | Edge header forwarding allowlist (`forwardHeaders` / `FORWARD_HEADERS`) for authenticated downstream REST | done | 60 |
 | 25 | `npm start` serves through the drain path: SIGTERM → 503 + `connection: close`, in-flight drain, prompt keep-alive shutdown | done | 61 |
 | 26 | Built package imports under plain Node ESM + NodeNext TS (`.js` specifiers, layout-independent SDL lookup, `files`/`prepack`) | done | 62 |
+| 27 | Multi-root by-id lookahead prefetch (aliased `author(id)`/`book(id)` roots skip one serial hop; call counts unchanged) | done | 63 |

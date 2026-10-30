@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-513%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-544%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -244,7 +244,7 @@ Fastify REST backend (bundled, canned JSON, artificial latency)
 
 The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true, cache: true }` collapses keys in a tick into one call; `NAIVE = { batch: false, cache: false }` makes DataLoader call the batch function once per key, faithfully reproducing the N+1 explosion so we can measure it.
 
-**Lookahead prefetch on by-id roots.** `Author.books` only needs `author.id` and `Book.reviews` only needs `book.id`. On a root `author(id:)` or `book(id:)` that key is already known from `args.id`, so the gateway starts the child's batched load in the same tick as the root fetch instead of one round trip later (`src/gateway/lookahead.ts`). The call count is unchanged, but there is one less serial hop: `author(id){ books{ reviews } }` waits for 2 serial round trips instead of 3, and `book(id){ reviews }` waits for 1 instead of 2. The rule is deliberately conservative. It only fires when that field is the operation's **sole root field**, because a sibling root, or a root-level fragment, could reach the same loader later and an early dispatch would split its batch. It never fires for a child excluded by `@skip`/`@include`, and it never fires when the loader cache is off (`NAIVE` or `cache: false`). The one cost: a by-id root whose id does not exist still spends the speculative call, so `author(id:"missing"){ books{...} }` makes 2 downstream calls instead of 1. The NOT_FOUND error is unchanged. A failing child route is still called only once: if the speculative load rejects, the error is re-primed into the loader cache (DataLoader clears failed keys), so the child resolver reuses that rejection instead of re-issuing the call.
+**Lookahead prefetch on by-id roots.** `Author.books` only needs `author.id` and `Book.reviews` only needs `book.id`. On a root `author(id:)` or `book(id:)` that key is already known from `args.id`, so the gateway starts the child's batched load in the same tick as the root fetch instead of one round trip later (`src/gateway/lookahead.ts`). The call count is unchanged, but there is one less serial hop: `author(id){ books{ reviews } }` waits for 2 serial round trips instead of 3, and `book(id){ reviews }` waits for 1 instead of 2. The rule is deliberately conservative. It only fires when **every root selection is a by-id `author`/`book` field**, aliases included, so `{ a: author(id:"a1"){ books{...} } b: author(id:"a2"){ books{...} } }` sends both children's keys in one batch in the same tick as the roots: 2 calls, one serial hop less. A list root (`authors`), a root-level fragment (named or inline) or a root `__typename` disables it for the whole operation, because such a root could reach the same loader a hop later and an early dispatch would split its batch. It never fires for a child excluded by `@skip`/`@include`, and it never fires when the loader cache is off (`NAIVE` or `cache: false`). The one cost: a by-id root whose id does not exist still spends the speculative call, so `author(id:"missing"){ books{...} }` makes 2 downstream calls instead of 1. That cost is paid once per child route: `{ a: author(id:"missing"){ books{...} } b: book(id:"missing"){ reviews{...} } }` makes 4 calls instead of 2. The NOT_FOUND error is unchanged. A failing child route is still called only once: if the speculative load rejects, the error is re-primed into the loader cache (DataLoader clears failed keys), so the child resolver reuses that rejection instead of re-issuing the call.
 
 ---
 
@@ -294,7 +294,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 513 tests across 33 files (Vitest), all green:
+`npm test` — 544 tests across 34 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
