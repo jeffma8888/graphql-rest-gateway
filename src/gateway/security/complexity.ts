@@ -16,7 +16,7 @@ import type {
   FieldNode,
   OperationDefinitionNode,
 } from 'graphql';
-import { getValidationResult, setValidationResult, buildFragmentMap } from './validation-cache';
+import { getValidationResult, setValidationResult, buildFragmentMap } from './validation-cache.js';
 
 /**
  * Query complexity (cost) validation rule.

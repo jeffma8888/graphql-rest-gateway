@@ -1,8 +1,8 @@
 import { GraphQLError } from 'graphql';
-import { RestClient } from './datasources/rest-client';
-import { buildDataSources, type DataSources } from './datasources';
-import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders';
-import { buildServices, type Services } from './services';
+import { RestClient } from './datasources/rest-client.js';
+import { buildDataSources, type DataSources } from './datasources/index.js';
+import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders.js';
+import { buildServices, type Services } from './services.js';
 
 /**
  * Request-scoped GraphQL context.

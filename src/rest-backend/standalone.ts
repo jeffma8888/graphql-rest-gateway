@@ -1,4 +1,4 @@
-import { buildBackend } from './server';
+import { buildBackend } from './server.js';
 
 /** Run the bundled REST backend on its own (e.g. `npm run backend`). */
 async function main(): Promise<void> {

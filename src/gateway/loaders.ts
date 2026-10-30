@@ -1,6 +1,6 @@
 import DataLoader from 'dataloader';
-import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data';
-import type { DataSources } from './datasources';
+import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
+import type { DataSources } from './datasources/index.js';
 
 /**
  * Request-scoped DataLoaders.

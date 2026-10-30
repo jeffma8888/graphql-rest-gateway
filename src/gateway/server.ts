@@ -1,17 +1,17 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, type ExecutionResult } from 'graphql';
-import { schema } from './schema';
-import { createContext, type GatewayContext } from './context';
-import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client';
-import type { LoaderOptions } from './loaders';
-import { depthLimit, measureDepth } from './security/depth-limit';
+import { schema } from './schema.js';
+import { createContext, type GatewayContext } from './context.js';
+import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
+import type { LoaderOptions } from './loaders.js';
+import { depthLimit, measureDepth } from './security/depth-limit.js';
 import {
   complexityLimit,
   complexityError,
   estimateComplexity,
   variableResolver,
-} from './security/complexity';
-import { getValidationResult, buildFragmentMap } from './security/validation-cache';
+} from './security/complexity.js';
+import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;

@@ -11,6 +11,13 @@
       "import": "./dist/src/lib.js"
     }
   },
+  "files": [
+    "dist/src",
+    "schema.graphql",
+    ".graphqlrc.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "description": "Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.",
   "keywords": [
     "graphql",
@@ -29,7 +36,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "codegen": "graphql-codegen --config codegen.ts",
     "dev": "tsx watch src/index.ts",

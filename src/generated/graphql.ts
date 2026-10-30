@@ -1,7 +1,7 @@
 import { GraphQLResolveInfo } from 'graphql';
-import { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data';
-import { AuthorConnectionModel, AuthorEdgeModel } from '../gateway/models';
-import { GatewayContext } from '../gateway/context';
+import { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
+import { AuthorConnectionModel, AuthorEdgeModel } from '../gateway/models.js';
+import { GatewayContext } from '../gateway/context.js';
 export type Maybe<T> = T | null;
 export type InputMaybe<T> = Maybe<T>;
 export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
@@ -93,7 +93,8 @@ export type Review = {
   rating: Scalars['Int']['output'];
   /**
    * Reviewer display name. Demonstrates auth-context threading: redacted to
-   * "REDACTED" unless the request carries a valid bearer token.
+   * "REDACTED" unless the request carries a valid bearer token AND the `pii`
+   * scope is present.
    */
   reviewer: Scalars['String']['output'];
 };

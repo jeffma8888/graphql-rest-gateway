@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-62
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- The published library entry point actually imports: built `dist/` loads under plain Node ESM and NodeNext TypeScript, and finds `schema.graphql`
+    - Candidate A2 -- Opt-in structured access log for `npm start` (`ACCESS_LOG=json`): one JSON line per GraphQL request with cost, depth, downstreamCalls and error codes
+    - Candidate A3 -- `npm start -- --check` / `--help`: validate and print the resolved config as JSON, then exit without listening
+    - Candidate B1 -- One selection-set walk yields both cost and depth (delete depth-limit.ts's private walker and `measureDepth`)
+    - Candidate B2 -- One generic `prefetchKey` helper and one `byIdLoader` factory (services.ts / loaders.ts)
+    - Candidate B3 -- Collapse the execute-phase special cases: `getRootType` for the triplicated root ternary, one extensions writer
+    winner: A1
+    ship: pending (not yet decided)
   iter-61
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Charge introspection/meta fields in the complexity and depth walkers (each `__schema`/`__type`/`__typename` node costs 1, never list-multiplied)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Opt-in structured access log for `npm start`: one JSON line per GraphQL request (`ACCESS_LOG=json`)
     - Candidate B3 -- `npm start -- --check` / `--help`: validate and print the resolved config as JSON, then exit without listening
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED ff41240
   iter-60
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Caller identity propagation: opt-in `forwardHeaders` allowlist so downstream REST calls carry the edge request's `authorization` / `x-request-id`
@@ -281,4 +291,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-28 scouted iterations
+29 scouted iterations

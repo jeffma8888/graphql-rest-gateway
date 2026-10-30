@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-495%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-513%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -119,7 +119,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 
 ### Programmatic usage
 
-The package exports a library entry point so you can embed the gateway in your own server:
+The package exports a library entry point so you can embed the gateway in your own server. The built package (`npm run build`, run automatically by `npm pack`) is verified by importing it by name from plain Node ESM and from a NodeNext TypeScript consumer, with real types and `schema.graphql` found at the package root:
 
 ```ts
 import { createGateway, buildBackend } from 'graphql-rest-gateway';
@@ -294,11 +294,12 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 495 tests across 32 files (Vitest), all green:
+`npm test` — 513 tests across 33 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
 - **Library entry** — imports from the barrel (`lib-entry.test.ts`), boots a gateway against the bundled backend, and asserts a successful query round-trip.
+- **Built package** (`test_iter62_behavior.test.ts`) — builds with `tsconfig.build.json` into a temp dir, imports the package by name from plain Node ESM (no loader), and type-checks a NodeNext consumer that must reject a wrong-typed `GatewayOptions`.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
 ```ts

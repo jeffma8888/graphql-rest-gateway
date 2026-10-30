@@ -1,7 +1,7 @@
-import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data';
-import type { DataSources } from './datasources';
-import type { Loaders } from './loaders';
-import { buildConnection, offsetFromCursor, type Connection } from './pagination/relay';
+import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
+import type { DataSources } from './datasources/index.js';
+import type { Loaders } from './loaders.js';
+import { buildConnection, offsetFromCursor, type Connection } from './pagination/relay.js';
 
 /**
  * Service layer: the business-logic seam between thin resolvers and the data

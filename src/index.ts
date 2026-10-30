@@ -1,4 +1,4 @@
-import { startFromEnv } from './cli';
+import { startFromEnv } from './cli.js';
 
 /**
  * `npm start` entry point. All configuration and startup logic lives in the

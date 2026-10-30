@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
-import type { Resolvers } from '../generated/graphql';
-import { willResolveChild } from './lookahead';
+import type { Resolvers } from '../generated/graphql.js';
+import { willResolveChild } from './lookahead.js';
 
 /**
  * Resolvers are deliberately THIN: they translate a GraphQL field into a single

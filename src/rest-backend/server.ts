@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { AUTHORS, BOOKS, REVIEWS, type AuthorRow, type BookRow, type ReviewRow } from './data';
+import { AUTHORS, BOOKS, REVIEWS, type AuthorRow, type BookRow, type ReviewRow } from './data.js';
 
 /**
  * Bundled downstream REST service -- the "legacy" system the GraphQL gateway

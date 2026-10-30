@@ -1,5 +1,5 @@
-import type { AuthorRow } from '../rest-backend/data';
-import type { Connection, Edge } from './pagination/relay';
+import type { AuthorRow } from '../rest-backend/data.js';
+import type { Connection, Edge } from './pagination/relay.js';
 
 /**
  * Concrete resolver-parent types for the Relay connection wrappers, referenced

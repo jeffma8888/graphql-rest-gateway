@@ -1,6 +1,6 @@
 import { GraphQLError, Kind } from 'graphql';
 import type { ValidationRule, SelectionSetNode, FragmentDefinitionNode } from 'graphql';
-import { buildFragmentMap, getValidationResult, setValidationResult } from './validation-cache';
+import { buildFragmentMap, getValidationResult, setValidationResult } from './validation-cache.js';
 
 /**
  * Query depth-limiting validation rule.

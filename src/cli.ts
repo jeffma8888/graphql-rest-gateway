@@ -1,9 +1,9 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { buildBackend } from './rest-backend/server';
-import { createGateway, type GatewayOptions } from './gateway/server';
-import { validateForwardHeaders } from './gateway/datasources/rest-client';
-import { createDrainAwareListener } from './http-adapter';
+import { buildBackend } from './rest-backend/server.js';
+import { createGateway, type GatewayOptions } from './gateway/server.js';
+import { validateForwardHeaders } from './gateway/datasources/rest-client.js';
+import { createDrainAwareListener } from './http-adapter.js';
 
 /**
  * CLI composition for `npm start`, kept free of import-time side effects (no

@@ -1,5 +1,5 @@
-import type { AuthorRow, BookRow, ReviewRow } from '../../rest-backend/data';
-import type { RestClient } from './rest-client';
+import type { AuthorRow, BookRow, ReviewRow } from '../../rest-backend/data.js';
+import type { RestClient } from './rest-client.js';
 
 /**
  * REST data sources -- the ONLY layer that knows the downstream URL shapes.
