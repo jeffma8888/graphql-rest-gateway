@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-59
+    lenses: narrative-and-docs, new-capability
+    - Candidate A1 -- Write the downstream REST contract down: an external `REST_BASE_URL` service must match query encodings and response shapes that only exist in code comments today
+    - Candidate A2 -- The README presents four symbols as public API that a package consumer cannot import (`BATCHED`, `NAIVE`, `LoaderOptions`, `requireAuth`)
+    - Candidate A3 -- §6 Architecture still describes the pre-iter-53 layering: "resolvers: one field → one service call" is false since iter-58, and the diagram omits the edge layer
+    - Candidate B1 -- Per-request downstream call budget `maxDownstreamCalls` -> typed `DOWNSTREAM_BUDGET_EXCEEDED` (+ `MAX_DOWNSTREAM_CALLS` env)
+    - Candidate B2 -- `addReview` mutation: the gateway's first write path, with loader invalidation so the response shows the write
+    - Candidate B3 -- Variable-driven bulk lookup `Query.books(ids: [ID!]!): [Book]!` (order-preserving, null for a missing id, one downstream call, max 100 ids)
+    winner: B1
+    ship: pending (not yet decided)
   iter-58
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Root-by-id lookahead prefetch: `author(id){ books }` and `book(id){ reviews }` start the child batch in the same tick as the root fetch
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The pagination contract (README section 7 + the SDL description of `first`) promises behaviour the code does not have
     - Candidate B3 -- "The cost model is a conservative upper bound" is stated in three places and is false by about 10× on the default query shape
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED b30c7fb
   iter-57
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One `operationCost` + one execute-phase extensions writer (collapse iter-54's duplicated cost path and fold `downstreamCallsPlugin`)
@@ -251,4 +261,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-25 scouted iterations
+26 scouted iterations

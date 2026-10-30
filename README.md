@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-397%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-435%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -98,6 +98,7 @@ Other entry points:
 | `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
 | `MAX_COMPLEXITY` | positive integer → `maxComplexity` | `1000` |
 | `DOWNSTREAM_TIMEOUT_MS` | positive integer → `downstreamTimeoutMs` | `30000` |
+| `MAX_DOWNSTREAM_CALLS` | positive integer → `maxDownstreamCalls` | unset → unlimited |
 
 Two-terminal example (the backend runs in its own process, and the gateway fronts it):
 
@@ -153,6 +154,7 @@ await gateway.close();
 | `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out) |
 | `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode (`BATCHED` or `NAIVE`) |
 | `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) |
+| `maxDownstreamCalls` | `number` | unlimited | Per-request cap on downstream REST calls sent; a call past it fails with `DOWNSTREAM_BUDGET_EXCEEDED` (positive integer, else `RangeError`) |
 
 **`BackendOptions`** — passed to `buildBackend(opts)`:
 
@@ -259,6 +261,11 @@ Root-level `Query.author` and `Query.book` return structured NOT_FOUND errors wh
 ### Downstream timeout
 Every outbound REST call is guarded by a per-request deadline (`downstreamTimeoutMs`, default 30 s). If the downstream service does not respond in time, the call aborts and the resolver surfaces a typed error (`extensions.code = DOWNSTREAM_TIMEOUT`). Configure the timeout via the `downstreamTimeoutMs` option in `createGateway` / `createContext`.
 
+### Downstream call budget
+`maxDownstreamCalls` (env `MAX_DOWNSTREAM_CALLS`, unset = unlimited) is a hard per-request ceiling on the downstream REST calls the gateway actually sends. Once a request has sent that many, any further call is refused **before** it leaves the gateway: the resolver gets a typed error with `extensions.code = DOWNSTREAM_BUDGET_EXCEEDED` and `extensions.budget` set to the configured number, and normal null propagation applies. Calls already in flight are not aborted. The budget is per request, so concurrent requests never share it, and it counts every path: batched loaders, naive loaders, list pages and lookahead prefetch. A speculative lookahead prefetch is counted when it is sent, so under a very tight budget it can take a slot before its root by-id fetch (the root then fails with `DOWNSTREAM_BUDGET_EXCEEDED` rather than `NOT_FOUND`). The refusal message names only the budget, never the downstream route.
+
+WHY it complements `maxComplexity`: the cost model is an estimate of response size, not of downstream fan-out. List pages are not batched, so 100 aliases of `authors(first: 0, after: "<distinct cursor>") { totalCount }` cost only **100** yet make **100** downstream calls, while the legitimate nested sample query costs **351** and makes just **3**. No complexity limit can stop the first without rejecting the second; a cap on the *measured* call count can. Validation-time `maxComplexity` still rejects oversized queries before any call is made. The budget is the backstop for whatever shape gets through.
+
 ### Downstream error
 When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), the gateway surfaces a typed error (`extensions.code = DOWNSTREAM_ERROR`) with `extensions.status` carrying the HTTP status code. The error message includes the status, status text, and the failed path, letting clients distinguish "the backend returned an error" from "the query itself was invalid."
 
@@ -266,7 +273,7 @@ When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), t
 Every successful response includes `extensions.queryComplexity` with numeric `cost` and `depth` fields — the same values the depth and complexity validation rules compute. Integrators can observe real traffic to tune `maxDepth`/`maxComplexity`, alert on creeping cost before clients trip the hard limit, and prove exactly what each query costs. When a query is rejected by the validation rules (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`), the `queryComplexity` extension is **not** injected — the rejection error already carries the relevant numbers.
 
 ### Downstream call metrics
-Every executed response also includes `extensions.downstreamCalls` with a single `total` field: the exact number of downstream REST calls **this request** attempted (including any that failed or timed out), read from the request-scoped `RestClient` counter. It sits next to `queryComplexity`, so the cost estimate and the measured cost appear together: the nested sample query reports `{ "total": 3 }` with batching and `21` with naive loaders. The count is per request, not cumulative, and concurrent requests never share it. Partial-error responses still carry it. Queries rejected by validation (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) make no downstream calls and do **not** get the extension. A per-path breakdown is deliberately left out so backend topology is not exposed to edge clients.
+Every executed response also includes `extensions.downstreamCalls` with a single `total` field: the exact number of downstream REST calls **this request** sent (including any that failed or timed out; calls refused by the [downstream call budget](#downstream-call-budget) are not counted), read from the request-scoped `RestClient` counter. It sits next to `queryComplexity`, so the cost estimate and the measured cost appear together: the nested sample query reports `{ "total": 3 }` with batching and `21` with naive loaders. The count is per request, not cumulative, and concurrent requests never share it. Partial-error responses still carry it. Queries rejected by validation (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) make no downstream calls and do **not** get the extension. A per-path breakdown is deliberately left out so backend topology is not exposed to edge clients.
 
 ### <a name="auth-context"></a>Auth context
 A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token; unauthenticated callers receive a typed error (`extensions.code = UNAUTHENTICATED`).
@@ -278,7 +285,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 397 tests across 29 files (Vitest), all green:
+`npm test` — 435 tests across 30 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

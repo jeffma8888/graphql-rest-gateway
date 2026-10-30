@@ -36,13 +36,50 @@ function joinBaseUrl(baseUrl: string, path: string): URL {
   return url;
 }
 
+/**
+ * Fails fast on a budget that could never be honoured as a call count. WHY a
+ * throw instead of clamping: `0`, `1.5` or `NaN` silently becoming "refuse
+ * everything" or "unlimited" is a misconfiguration the operator must see.
+ * Lives next to `RestClient` so every entry point (`createGateway`, the public
+ * `createContext`, a hand-built client) is checked the same way.
+ */
+export function validateMaxDownstreamCalls(value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new RangeError(`maxDownstreamCalls must be a positive integer, got ${String(value)}`);
+  }
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
   readonly timeoutMs: number;
 
-  constructor(private readonly baseUrl: string, timeoutMs?: number) {
+  /**
+   * @param maxCalls Hard ceiling on calls this client may *send* (undefined =
+   *   unlimited). WHY on the client: it is already the per-request counter
+   *   behind `extensions.downstreamCalls`, so the budget is enforced on the
+   *   measured number whatever the query shape, batching mode or prefetch path.
+   */
+  constructor(
+    private readonly baseUrl: string,
+    timeoutMs?: number,
+    private readonly maxCalls?: number,
+  ) {
+    validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
+
+  /**
+   * Refuses a call once the budget is spent. Runs before `track`, so a refused
+   * call is never counted: `stats.total` only ever reports calls actually sent.
+   */
+  private checkBudget(): void {
+    if (this.maxCalls === undefined || this.stats.total < this.maxCalls) return;
+    throw new GraphQLError(
+      `Downstream call budget of ${this.maxCalls} exceeded; call refused`,
+      { extensions: { code: 'DOWNSTREAM_BUDGET_EXCEEDED', budget: this.maxCalls } },
+    );
   }
 
   private track(path: string): void {
@@ -51,6 +88,7 @@ export class RestClient {
   }
 
   async get<T>(path: string, params?: QueryParams): Promise<T> {
+    this.checkBudget();
     this.track(path);
 
     const url = joinBaseUrl(this.baseUrl, path);

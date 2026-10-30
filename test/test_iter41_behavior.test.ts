@@ -30,7 +30,7 @@ function extractInterfaceProps(filePath: string, interfaceName: string): string[
 
 const readme = readText('README.md');
 
-// EB1 — README contains GatewayOptions table with all 5 properties
+// EB1 — README contains GatewayOptions table with all 6 properties (iter-59 added maxDownstreamCalls)
 describe('EB1 — README GatewayOptions table completeness', () => {
   it('README has an Options reference subsection', () => {
     expect(readme).toContain('#### Options reference');
@@ -60,7 +60,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
     expect(readme).toContain('`downstreamTimeoutMs`');
   });
 
-  it('GatewayOptions table has exactly 5 data rows', () => {
+  it('GatewayOptions table has exactly 6 data rows', () => {
     const optionsIdx = readme.indexOf('`GatewayOptions`');
     const nextHeadingIdx = readme.indexOf('`BackendOptions`', optionsIdx);
     const section = readme.slice(optionsIdx, nextHeadingIdx);
@@ -68,7 +68,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
       .split('\n')
       .filter((line) => line.startsWith('|') && !line.includes('---'));
     const dataRows = tableRows.slice(1);
-    expect(dataRows.length).toBe(5);
+    expect(dataRows.length).toBe(6);
   });
 });
 
@@ -120,12 +120,13 @@ describe('EB3 — GatewayOptions drift guard', () => {
     ).toEqual([]);
   });
 
-  it('contains exactly the expected 5 properties', () => {
+  it('contains exactly the expected 6 properties', () => {
     const expected = [
       'downstreamTimeoutMs',
       'loaderOptions',
       'maxComplexity',
       'maxDepth',
+      'maxDownstreamCalls',
       'restBaseUrl',
     ];
     expect(props).toEqual(expected);

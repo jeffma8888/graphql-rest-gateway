@@ -95,6 +95,7 @@ function parseEnv(env: Env): CliConfig {
       maxDepth: readInt('MAX_DEPTH', env.MAX_DEPTH, 1),
       maxComplexity: readInt('MAX_COMPLEXITY', env.MAX_COMPLEXITY, 1),
       downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1),
+      maxDownstreamCalls: readInt('MAX_DOWNSTREAM_CALLS', env.MAX_DOWNSTREAM_CALLS, 1),
     },
   };
 }

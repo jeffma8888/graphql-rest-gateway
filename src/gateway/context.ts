@@ -33,6 +33,8 @@ export interface CreateContextOptions {
   loaderOptions?: LoaderOptions;
   /** Downstream REST call timeout in ms; forwarded to RestClient. */
   downstreamTimeoutMs?: number;
+  /** Per-request ceiling on sent downstream calls; forwarded to RestClient. Unset = unlimited. */
+  maxDownstreamCalls?: number;
 }
 
 /**
@@ -53,7 +55,9 @@ export function parseAuth(authorization?: string | null): AuthContext {
 }
 
 export function createContext(opts: CreateContextOptions): GatewayContext {
-  const restClient = opts.restClient ?? new RestClient(opts.restBaseUrl ?? 'http://127.0.0.1:4001', opts.downstreamTimeoutMs);
+  const restClient =
+    opts.restClient ??
+    new RestClient(opts.restBaseUrl ?? 'http://127.0.0.1:4001', opts.downstreamTimeoutMs, opts.maxDownstreamCalls);
   const datasources = buildDataSources(restClient);
   const loaderOptions = opts.loaderOptions ?? BATCHED;
   const loaders = buildLoaders(datasources, loaderOptions);

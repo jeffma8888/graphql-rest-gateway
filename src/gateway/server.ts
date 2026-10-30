@@ -2,6 +2,7 @@ import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, type ExecutionResult } from 'graphql';
 import { schema } from './schema';
 import { createContext, type GatewayContext } from './context';
+import { validateMaxDownstreamCalls } from './datasources/rest-client';
 import type { LoaderOptions } from './loaders';
 import { depthLimit, measureDepth } from './security/depth-limit';
 import {
@@ -19,6 +20,12 @@ export interface GatewayOptions {
   loaderOptions?: LoaderOptions;
   /** Downstream REST call timeout in ms. Finite default (30s) when omitted. */
   downstreamTimeoutMs?: number;
+  /**
+   * Per-request ceiling on downstream REST calls actually sent. A call past it
+   * is refused before it leaves the gateway (`DOWNSTREAM_BUDGET_EXCEEDED`).
+   * Unlimited when omitted.
+   */
+  maxDownstreamCalls?: number;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -121,7 +128,8 @@ function queryComplexityPlugin(maxComplexity: number, defaultListSize: number): 
 
 /**
  * Injects `extensions.downstreamCalls.total`: the measured number of REST calls
- * this request attempted (incl. failed/timed-out), next to `queryComplexity`'s estimate. WHY: it turns the
+ * this request sent (incl. failed/timed-out; calls refused by `maxDownstreamCalls`
+ * are not counted), next to `queryComplexity`'s estimate. WHY: it turns the
  * batching claim into proof on every live response. Safe to read per request
  * because `createContext` builds a fresh `RestClient` (and counter) each time.
  * Only `total` is exposed -- a per-path breakdown would leak backend topology
@@ -150,6 +158,7 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
 }
 
 export function createGateway(opts: GatewayOptions): GatewayServer {
+  validateMaxDownstreamCalls(opts.maxDownstreamCalls);
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
 
@@ -165,6 +174,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         authorization: request.headers.get('authorization'),
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
+        maxDownstreamCalls: opts.maxDownstreamCalls,
       }),
     plugins: [
       healthzPlugin(),
