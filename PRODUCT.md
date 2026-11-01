@@ -51,3 +51,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 29 | README cost figures derived from a live run (stale "351"; benchmark query costs 356) | planned | — |
 | 30 | `close()` clears its drain-bound timer and shares one drain across repeated calls | planned | — |
 | 31 | Edge lookahead on `Book.author` → `Author.books` (gated on a `maxDownstreamCalls` interaction decision) | planned | — |
+| 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |

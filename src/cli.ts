@@ -112,6 +112,7 @@ function parseEnv(env: Env): CliConfig {
       downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1),
       maxDownstreamCalls: readInt('MAX_DOWNSTREAM_CALLS', env.MAX_DOWNSTREAM_CALLS, 1),
       forwardHeaders: readForwardHeaders(env.FORWARD_HEADERS),
+      maxBatchSize: readInt('MAX_BATCH_SIZE', env.MAX_BATCH_SIZE, 1),
     },
   };
 }

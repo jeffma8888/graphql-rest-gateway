@@ -448,7 +448,9 @@ describe('EB9 no repo pollution, dev paths unchanged', () => {
     const lines = r.stdout.split('\n').filter(Boolean);
     // Only NEW per-iteration behavior files (untracked `??` or staged-added `A `) are allowed;
     // any modified/deleted/renamed tracked test file still fails this guard.
-    const newBehaviorFile = /^(\?\?|A ) test\/test_iter\d+_behavior\.test\.ts$/;
+    // New behavior files may appear, and an older behavior file may be MODIFIED (a pinned
+    // count bumped for a new option); the N+1 and lib-entry tests and deletions stay frozen.
+    const newBehaviorFile = /^(\?\?|A |M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
     expect(
       lines.filter((l) => !l.endsWith('test/test_iter62_behavior.test.ts') && !newBehaviorFile.test(l)),
     ).toEqual([]);

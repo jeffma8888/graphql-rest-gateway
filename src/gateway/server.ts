@@ -33,6 +33,13 @@ export interface GatewayOptions {
    * caller did not send is not sent. Invalid or hop-by-hop names throw.
    */
   forwardHeaders?: readonly string[];
+  /**
+   * Opt-in GraphQL-over-HTTP request batching: a POST whose JSON body is an
+   * array of up to this many operations is served as one batch, and every
+   * operation in it shares one request-scoped `RestClient`, loader set and
+   * `maxDownstreamCalls` budget. Batching is off (400) when omitted.
+   */
+  maxBatchSize?: number;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -44,6 +51,14 @@ export interface GatewayServer {
 }
 
 const DRAIN_TIMEOUT_MS = 5000;
+
+/** Same rule as the other numeric limits: a positive safe integer, or omitted. */
+function validateMaxBatchSize(value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new RangeError(`maxBatchSize must be a positive integer, got ${String(value)}`);
+  }
+}
 
 function securityPlugin(maxDepth: number, maxComplexity: number): Plugin {
   return {
@@ -152,7 +167,9 @@ function pickHeaders(headers: Headers, names: readonly string[]): Record<string,
  * this request sent (incl. failed/timed-out; calls refused by `maxDownstreamCalls`
  * are not counted), next to `queryComplexity`'s estimate. WHY: it turns the
  * batching claim into proof on every live response. Safe to read per request
- * because `createContext` builds a fresh `RestClient` (and counter) each time.
+ * because the context factory builds one `RestClient` (and counter) per edge
+ * HTTP request. In a batch every operation shares that counter, so each
+ * element reports the batch-wide total at the moment its operation finished.
  * Only `total` is exposed -- a per-path breakdown would leak backend topology
  * to edge clients. Validation-rejected queries never reach `onExecute`, so
  * they carry no extension.
@@ -181,6 +198,7 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
 export function createGateway(opts: GatewayOptions): GatewayServer {
   validateMaxDownstreamCalls(opts.maxDownstreamCalls);
   const forwardHeaders = validateForwardHeaders(opts.forwardHeaders);
+  validateMaxBatchSize(opts.maxBatchSize);
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
 
@@ -188,18 +206,39 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   let inFlight = 0;
   let drainResolve: (() => void) | null = null;
 
-  const yoga = createYoga<Record<string, never>, GatewayContext>({
-    schema,
-    context: ({ request }) =>
-      createContext({
+  // WHY memoised per Request: Yoga calls the context factory once per
+  // operation, but hands every operation of one batched POST the same
+  // `Request`. Keying on it makes a batch share one RestClient/loader set/
+  // budget, while a new edge HTTP request (a new Request) never reuses one.
+  const contexts = new WeakMap<Request, GatewayContext>();
+  const contextFor = (request: Request): GatewayContext => {
+    let context = contexts.get(request);
+    if (!context) {
+      context = createContext({
         restBaseUrl: opts.restBaseUrl,
         authorization: request.headers.get('authorization'),
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,
         downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
-      }),
+      });
+      contexts.set(request, context);
+    }
+    return context;
+  };
+
+  const yoga = createYoga<Record<string, never>, GatewayContext>({
+    schema,
+    context: ({ request }) => contextFor(request),
+    batching: opts.maxBatchSize === undefined ? false : { limit: opts.maxBatchSize },
     plugins: [
+      {
+        // One memo entry per handling: a caller-reused Request (GET) must not
+        // inherit the previous call's loaders, counter or budget.
+        onRequest({ request }) {
+          contexts.delete(request);
+        },
+      },
       healthzPlugin(),
       securityPlugin(maxDepth, maxComplexity),
       queryComplexityPlugin(maxComplexity, 5),

@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-65
+    lenses: narrative-and-docs
+    - Candidate A1 -- README §7's "sample query costs 351" figure was never true (the benchmark query costs 356, the §3 sample costs 501), and test_iter59 pins the wrong literal. Derive the figure from a live run instead.
+    - Candidate A2 -- The README claims, twice, that the gateway hides backend topology from edge clients, but every DOWNSTREAM_ERROR / DOWNSTREAM_TIMEOUT message names the downstream route, and a test pins that it does. Write down the real policy.
+    - Candidate A3 -- README §6 Architecture omits the lookahead layer and the edge/budget responsibilities, and says "resolvers: one field -> one service call", which the `author`/`book` resolvers break. Re-draw the map and guard it against the file tree.
+    - Candidate B1 -- HTTP request batching: a JSON array of operations in one POST shares one loader set, so N batched operations cost the downstream calls of one merged operation
+    - Candidate B2 -- Persisted operations: automatic persisted queries (APQ hash → document) plus an opt-in allowlist mode that refuses unknown documents with a typed error and 0 downstream calls
+    - Candidate B3 -- Edge correlation id: the gateway mints `x-request-id` when the caller sent none, echoes it on the response, and stamps it on every downstream REST call of that request
+    winner: B1
+    ship: pending (not yet decided)
   iter-64
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Edge lookahead on `Book.author`: `book(id){ author{ books } }` starts the `books/by-author` batch alongside the author fetch (one serial hop removed, same call count)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The README documents public API the package does not export (`NAIVE`/`BATCHED`/`LoaderOptions`, `requireAuth`), and a consumer who follows it silently gets batched mode
     - Candidate B3 -- "The cost model is a conservative upper bound" (README §7, §9, `complexity.ts:31`) is contradicted by the README's own budget section and by a two-query probe
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED 2950645
   iter-63
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One selection-set walk yields both cost and depth (delete depth-limit.ts's private walker and `measureDepth`)
@@ -311,4 +321,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-31 scouted iterations
+32 scouted iterations
