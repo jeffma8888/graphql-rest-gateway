@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-64
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Edge lookahead on `Book.author`: `book(id){ author{ books } }` starts the `books/by-author` batch alongside the author fetch (one serial hop removed, same call count)
+    - Candidate A2 -- `close()` stops lingering: clear the drain bound timer and make a second `close()` share the first drain (library-script exit about 6.4 s → about 2.2 s; double-close 5 005 ms → 218 ms)
+    - Candidate A3 -- Cut the QC suite critical path (about 14 s wall) by splitting `test_iter61_behavior.test.ts` (11.8 s, 14 tests) into 3–4 worker files, with zero assertion edits
+    - Candidate B1 -- The README's "sample query costs 351" figure was never true (it is 356 for the benchmark query and 501 for the README/GraphiQL sample), and a test pins the wrong number. Derive the README cost figures from a live run instead.
+    - Candidate B2 -- The README documents public API the package does not export (`NAIVE`/`BATCHED`/`LoaderOptions`, `requireAuth`), and a consumer who follows it silently gets batched mode
+    - Candidate B3 -- "The cost model is a conservative upper bound" (README §7, §9, `complexity.ts:31`) is contradicted by the README's own budget section and by a two-query probe
+    winner: B2
+    ship: pending (not yet decided)
   iter-63
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One selection-set walk yields both cost and depth (delete depth-limit.ts's private walker and `measureDepth`)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Opt-in cross-request in-flight coalescing of identical downstream GETs (`coalesceDownstream: true`), keyed by URL + forwarded headers
     - Candidate B3 -- Cut the QC suite's critical path from 15.5 s to about 6 s by splitting `test_iter61_behavior.test.ts` along its describe blocks (zero assertion edits)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 8ac7a2b
   iter-62
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- The published library entry point actually imports: built `dist/` loads under plain Node ESM and NodeNext TypeScript, and finds `schema.graphql`
@@ -301,4 +311,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-30 scouted iterations
+31 scouted iterations

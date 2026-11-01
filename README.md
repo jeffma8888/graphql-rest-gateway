@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-544%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-565%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -157,7 +157,7 @@ await gateway.close();
 | `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend; a path prefix such as `/api/v1` is kept; a query string or fragment is ignored |
 | `maxDepth` | `number` | `10` | Maximum allowed query nesting depth |
 | `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out) |
-| `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode (`BATCHED` or `NAIVE`) |
+| `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode; pass `BATCHED` or `NAIVE` (both frozen, importable from the package entry) |
 | `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) |
 | `maxDownstreamCalls` | `number` | unlimited | Per-request cap on downstream REST calls sent; a call past it fails with `DOWNSTREAM_BUDGET_EXCEEDED` (positive integer, else `RangeError`) |
 | `forwardHeaders` | `readonly string[]` | `[]` (none) | Edge request headers (case-insensitive) copied onto every downstream REST call of the same request, e.g. `['authorization', 'x-request-id']`; invalid or hop-by-hop names throw |
@@ -169,7 +169,7 @@ await gateway.close();
 | `latencyMs` | `number` | `10` | Artificial latency added to every data request (ms) |
 | `forceCloseConnections` | `boolean` | `false` | Destroy idle keep-alive sockets on close instead of waiting for timeout |
 
-Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `buildBackend`, `BackendOptions`, `schema`.
+Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `NAIVE`, `BATCHED`, `LoaderOptions`, `buildBackend`, `BackendOptions`, `schema`.
 
 ---
 
@@ -242,7 +242,7 @@ Fastify REST backend (bundled, canned JSON, artificial latency)
 
 **Where DataLoader lives and why it's request-scoped.** Loaders are built fresh inside `createContext` on **every request** (`src/gateway/context.ts` -> `buildLoaders`). This is deliberate and it's the classic senior footgun if you get it wrong: a DataLoader carries a per-instance cache, so a **module-level / shared** loader would (a) leak one user's data into another user's response and (b) serve stale rows forever. Request scoping bounds both the cache and the batch window to a single operation.
 
-The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true, cache: true }` collapses keys in a tick into one call; `NAIVE = { batch: false, cache: false }` makes DataLoader call the batch function once per key, faithfully reproducing the N+1 explosion so we can measure it.
+The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true, cache: true }` collapses keys in a tick into one call; `NAIVE = { batch: false, cache: false }` makes DataLoader call the batch function once per key, faithfully reproducing the N+1 explosion so we can measure it. Both constants (frozen) and the `LoaderOptions` type are importable from the package entry, so a library user can reproduce the comparison: with `import { createGateway, NAIVE } from 'graphql-rest-gateway'`, `createGateway({ restBaseUrl, loaderOptions: NAIVE })` makes 21 downstream calls for the benchmark query where the default makes 3.
 
 **Lookahead prefetch on by-id roots.** `Author.books` only needs `author.id` and `Book.reviews` only needs `book.id`. On a root `author(id:)` or `book(id:)` that key is already known from `args.id`, so the gateway starts the child's batched load in the same tick as the root fetch instead of one round trip later (`src/gateway/lookahead.ts`). The call count is unchanged, but there is one less serial hop: `author(id){ books{ reviews } }` waits for 2 serial round trips instead of 3, and `book(id){ reviews }` waits for 1 instead of 2. The rule is deliberately conservative. It only fires when **every root selection is a by-id `author`/`book` field**, aliases included, so `{ a: author(id:"a1"){ books{...} } b: author(id:"a2"){ books{...} } }` sends both children's keys in one batch in the same tick as the roots: 2 calls, one serial hop less. A list root (`authors`), a root-level fragment (named or inline) or a root `__typename` disables it for the whole operation, because such a root could reach the same loader a hop later and an early dispatch would split its batch. It never fires for a child excluded by `@skip`/`@include`, and it never fires when the loader cache is off (`NAIVE` or `cache: false`). The one cost: a by-id root whose id does not exist still spends the speculative call, so `author(id:"missing"){ books{...} }` makes 2 downstream calls instead of 1. That cost is paid once per child route: `{ a: author(id:"missing"){ books{...} } b: book(id:"missing"){ reviews{...} } }` makes 4 calls instead of 2. The NOT_FOUND error is unchanged. A failing child route is still called only once: if the speculative load rejects, the error is re-primed into the loader cache (DataLoader clears failed keys), so the child resolver reuses that rejection instead of re-issuing the call.
 
@@ -285,7 +285,7 @@ Every successful response includes `extensions.queryComplexity` with numeric `co
 Every executed response also includes `extensions.downstreamCalls` with a single `total` field: the exact number of downstream REST calls **this request** sent (including any that failed or timed out; calls refused by the [downstream call budget](#downstream-call-budget) are not counted), read from the request-scoped `RestClient` counter. It sits next to `queryComplexity`, so the cost estimate and the measured cost appear together: the nested sample query reports `{ "total": 3 }` with batching and `21` with naive loaders. The count is per request, not cumulative, and concurrent requests never share it. Partial-error responses still carry it. Queries rejected by validation (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) make no downstream calls and do **not** get the extension. A per-path breakdown is deliberately left out so backend topology is not exposed to edge clients.
 
 ### <a name="auth-context"></a>Auth context
-A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. A `requireAuth(ctx)` guard helper is provided for fields that should hard-fail without a token; unauthenticated callers receive a typed error (`extensions.code = UNAUTHENTICATED`).
+A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. `requireAuth(ctx)` is an internal helper in `src/gateway/context.ts` that throws a typed error (`extensions.code = UNAUTHENTICATED`) when the caller is not authenticated (missing or unparseable token), but no shipped field uses it, so today no request receives `UNAUTHENTICATED`; the code is reserved for future schema fields that adopt the helper.
 
 ### Observability
 The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. The per-request gateway count is surfaced to clients as [`extensions.downstreamCalls`](#downstream-call-metrics). This is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
@@ -294,7 +294,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 544 tests across 34 files (Vitest), all green:
+`npm test` — 565 tests across 35 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

@@ -21,8 +21,13 @@ export interface LoaderOptions {
   cache: boolean;
 }
 
-export const BATCHED: LoaderOptions = { batch: true, cache: true };
-export const NAIVE: LoaderOptions = { batch: false, cache: false };
+/**
+ * Frozen because both constants are public (re-exported from `src/lib.ts`) and
+ * shared by every gateway in the process: one caller mutating `BATCHED` would
+ * silently flip the default mode of every other gateway.
+ */
+export const BATCHED: Readonly<LoaderOptions> = Object.freeze({ batch: true, cache: true });
+export const NAIVE: Readonly<LoaderOptions> = Object.freeze({ batch: false, cache: false });
 
 export interface Loaders {
   authorById: DataLoader<string, AuthorRow | null>;

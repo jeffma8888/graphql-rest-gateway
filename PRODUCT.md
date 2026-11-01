@@ -47,3 +47,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 25 | `npm start` serves through the drain path: SIGTERM → 503 + `connection: close`, in-flight drain, prompt keep-alive shutdown | done | 61 |
 | 26 | Built package imports under plain Node ESM + NodeNext TS (`.js` specifiers, layout-independent SDL lookup, `files`/`prepack`) | done | 62 |
 | 27 | Multi-root by-id lookahead prefetch (aliased `author(id)`/`book(id)` roots skip one serial hop; call counts unchanged) | done | 63 |
+| 28 | Package entry exports `NAIVE`/`BATCHED` (frozen) + `type LoaderOptions`; README export list computed-guarded; `requireAuth` prose corrected | done | 64 |
+| 29 | README cost figures derived from a live run (stale "351"; benchmark query costs 356) | planned | — |
+| 30 | `close()` clears its drain-bound timer and shares one drain across repeated calls | planned | — |
+| 31 | Edge lookahead on `Book.author` → `Author.books` (gated on a `maxDownstreamCalls` interaction decision) | planned | — |
