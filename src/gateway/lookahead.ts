@@ -16,8 +16,11 @@ import {
  * WHY: on a by-id root (`author(id)`, `book(id)`) the key the child edge needs
  * (`author.id`, `book.id`) is already known from `args.id`, so the child's
  * batched load can start in the same tick as the root fetch instead of one
- * full downstream round trip later. This module only answers "will that child
- * really be resolved, and is it safe to start it early?"; it never fetches.
+ * full downstream round trip later. `Book.author` reuses the same gate one
+ * level down: `Author.books` needs `book.authorId`, already on the parent row,
+ * so the author's books load can start alongside the author load. This module
+ * only answers "will that child really be resolved, and is it safe to start
+ * it early?"; it never fetches.
  */
 
 /** Mirrors graphql-js execution: a node runs unless @skip(if:true) or @include(if:false). */

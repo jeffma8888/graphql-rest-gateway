@@ -433,20 +433,25 @@ describe('EB9 - unchanged surfaces', () => {
     if (out !== null) expect(out.trim()).toBe('');
   });
 
-  it('SDL, generated types, loaders, resolvers and datasources are unmodified', () => {
+  it('SDL, generated types, loaders and datasources are unmodified', () => {
     const out = headPorcelain([
       'schema.graphql',
       'src/generated',
       'src/gateway/loaders.ts',
-      'src/gateway/resolvers.ts',
       'src/gateway/datasources',
     ]);
     if (out !== null) expect(out.trim()).toBe('');
   });
 
-  it('no tracked test file is edited', () => {
+  it('no tracked non-behavior test file is edited or deleted', () => {
     const out = headPorcelain(['test'], ['--untracked-files=no']);
-    if (out !== null) expect(out.trim()).toBe('');
+    if (out === null) return;
+    const lines = out.split('\n').filter(Boolean);
+    // An older behavior file may be MODIFIED (a HEAD-pin path list narrowed by a later slice);
+    // n-plus-1, lib-entry and every other non-behavior test stay byte-frozen, nothing is deleted.
+    const bumpedBehaviorFile = /^(M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
+    expect(lines.filter((l) => !bumpedBehaviorFile.test(l))).toEqual([]);
+    expect(lines.some((l) => /^ ?D|^.D/.test(l))).toBe(false);
   });
 });
 

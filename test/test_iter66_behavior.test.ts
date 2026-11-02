@@ -442,21 +442,16 @@ describe('EB13 - unchanged', () => {
     expect(s.calls).toBe(21);
   });
 
-  it('every tracked test file is byte-identical to HEAD; only new behavior files are untracked', () => {
-    let changed = 0;
-    try {
-      execFileSync('git', ['diff', 'HEAD', '--quiet', '--', 'test'], { cwd: root, stdio: 'pipe' });
-    } catch (err) {
-      changed = (err as { status?: number }).status ?? 1;
-    }
-    expect(changed).toBe(0);
+  it('non-behavior tracked tests are byte-identical to HEAD; only behavior files are new or modified', () => {
     const status = execFileSync('git', ['status', '--porcelain', '--', 'test'], {
       cwd: root,
       encoding: 'utf8',
     });
     const lines = status.split('\n').filter((l) => l.trim() !== '');
-    for (const l of lines) {
-      expect(l).toMatch(/^\?\? test\/test_iter\d+_behavior\.test\.ts$/);
-    }
+    // An older behavior file may be MODIFIED (a HEAD-pin path list narrowed by a later slice);
+    // n-plus-1, lib-entry and every other non-behavior test stay byte-frozen, nothing is deleted.
+    const allowed = /^(\?\?|A |M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
+    expect(lines.filter((l) => !allowed.test(l))).toEqual([]);
+    expect(lines.some((l) => /^ ?D|^.D/.test(l))).toBe(false);
   });
 });

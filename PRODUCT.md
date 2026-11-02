@@ -50,7 +50,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 28 | Package entry exports `NAIVE`/`BATCHED` (frozen) + `type LoaderOptions`; README export list computed-guarded; `requireAuth` prose corrected | done | 64 |
 | 29 | README cost figures derived from a live run (stale "351"; benchmark query costs 356) | planned | — |
 | 30 | `close()` clears its drain-bound timer and shares one drain across repeated calls | planned | — |
-| 31 | Edge lookahead on `Book.author` → `Author.books` (gated on a `maxDownstreamCalls` interaction decision) | planned | — |
+| 31 | `Book.author` → `Author.books` lookahead (`book(id){author{books}}`: 3 hops → 2, call counts unchanged) | done | 70 |
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
 | 34 | Relay backward pagination on `Query.authors` (`last`/`before`, one downstream call per page) | planned | — |
@@ -63,3 +63,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 41 | `npm start` opt-in pre-flight (`PREFLIGHT=warn\|fail`) runs check-backend before listening | planned | — |
 | 42 | `check-backend` checks authenticated backends (`--header`) and honours `DOWNSTREAM_TIMEOUT_MS` with per-route latency | planned | — |
 | 43 | Identical `authors(first, after)` list pages fetched once per edge HTTP request (batch of 10 identical ops: 12 → 3 calls) | done | 69 |
+| 44 | Batch-wide lookahead gate: under `maxBatchSize`, one gate-off op turns prefetch off for every op in the POST (mixed batches split today: +1 call) | planned | — |

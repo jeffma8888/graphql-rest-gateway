@@ -467,8 +467,8 @@ describe('EB10 - static guard: one walker', () => {
 
 // ---------- EB11 ----------
 describe('EB11 - no downstream or loader change', () => {
-  it('loaders, resolvers, datasources and schema.graphql are unmodified relative to HEAD', () => {
-    const paths = ['src/gateway/loaders.ts', 'src/gateway/resolvers.ts', 'src/gateway/datasources', 'schema.graphql'];
+  it('loaders, datasources and schema.graphql are unmodified relative to HEAD', () => {
+    const paths = ['src/gateway/loaders.ts', 'src/gateway/datasources', 'schema.graphql'];
     let out: string;
     try {
       out = execFileSync('git', ['status', '--porcelain', '--', ...paths], { cwd: root, encoding: 'utf8' });

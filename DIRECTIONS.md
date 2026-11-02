@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-70
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- `Book.author` lookahead (roadmap row 31): `book(id){ author{ books } }` starts `/books/by-author` in the same tick as `/authors/by-ids`, so 3 serial hops become 2 at an identical call count
+    - Candidate A2 -- Downstream transport on a keep-alive `node:http(s)` Agent instead of global `fetch`: about 20% less CPU per request and about 15% more req/s, re-measured
+    - Candidate A3 -- One batched POST costs 34 ms of synchronous validation CPU per element, so 200 cap-sized docs block every caller for 6.7 s: budget the 2000-token cap per edge HTTP request (roadmap row 37)
+    - B1 -- Redraw README §6 Architecture to match the code, and pin the diagram to the module tree
+    - B2 -- Record the "read-only graph" invariant as a §9 design decision, with a tripwire on `type Mutation`
+    - B3 -- §8 "N tests across M files" stops being a hand-maintained guess: M derived from the tree, N floor raised to now
+    winner: A1
+    ship: pending (not yet decided)
   iter-69
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1: Delete the four "working tree must match git HEAD" test guards (iter-62/64/66/68), which turn the suite red for any legitimate edit
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Downstream transport on a keep-alive `node:http(s)` agent instead of global `fetch`: about 25% less CPU per request, about 18% more req/s
     - Candidate B3 -- `Book.author` lookahead (roadmap row 31): `book(id){ author{ books } }` starts `/books/by-author` alongside `/authors/by-ids`, cutting 3 serial hops to 2 with the same call count
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED fa5fc8e
   iter-68
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- `npm start` runs the check-backend pre-flight before it listens (`PREFLIGHT=warn|fail`)
@@ -361,4 +371,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-36 scouted iterations
+37 scouted iterations

@@ -3,9 +3,10 @@ import type { Resolvers } from '../generated/graphql.js';
 import { willResolveChild } from './lookahead.js';
 
 /**
- * Resolvers are deliberately THIN: they translate a GraphQL field into a single
- * service call and nothing more. No fetch logic, no batching logic, no URL
- * knowledge -- all of that lives below in services -> loaders -> datasources.
+ * Resolvers are deliberately THIN: each translates a GraphQL field into service
+ * calls (its own load, plus at most one lookahead prefetch) and nothing more.
+ * No fetch logic, no batching logic, no URL knowledge -- all of that lives
+ * below in services -> loaders -> datasources.
  *
  * Parent types are the raw REST rows (AuthorRow/BookRow/ReviewRow) via codegen
  * `mappers`; scalar fields (id, name, title, ...) fall through to GraphQL's
@@ -13,7 +14,9 @@ import { willResolveChild } from './lookahead.js';
  *
  * By-id roots also kick off a lookahead prefetch (see `./lookahead`): the
  * child edge's key is `args.id`, so its batched load need not wait for the
- * root fetch to return.
+ * root fetch to return. `Book.author` does the same one level down: the key
+ * `Author.books` needs is `book.authorId`, already on the parent row, so the
+ * author's books load starts in the same tick as the author load.
  */
 export const resolvers: Resolvers = {
   // Roots that call `willResolveChild` must be listed in BY_ID_ROOTS (lookahead.ts).
@@ -46,7 +49,16 @@ export const resolvers: Resolvers = {
   },
 
   Book: {
-    author: async (book, _args, ctx) => {
+    author: async (book, _args, ctx, info) => {
+      // Same root-safety gate as the by-id roots (see lookahead.ts). Under it,
+      // every Book.author -> books load of the operation moves up by the same
+      // one hop, so batches are shifted together, never split: call counts are
+      // unchanged. That holds within ONE operation: every Author node comes from
+      // author(id) or Book.author, and both prefetch. A new Author-returning edge
+      // must prefetch too, or this breaks. Ops sharing loaders in an opt-in HTTP
+      // batch can still split a batch (+1 call; same as the root lookahead).
+      // Cost: an orphan row (no such author) still spends this call.
+      if (willResolveChild(info, 'books')) ctx.services.book.prefetchBooksForAuthor(book.authorId);
       const author = await ctx.services.author.getAuthor(book.authorId);
       if (!author) {
         // Non-null field: throwing here triggers GraphQL null propagation,
