@@ -52,3 +52,6 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 30 | `close()` clears its drain-bound timer and shares one drain across repeated calls | planned | — |
 | 31 | Edge lookahead on `Book.author` → `Author.books` (gated on a `maxDownstreamCalls` interaction decision) | planned | — |
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
+| 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
+| 34 | Relay backward pagination on `Query.authors` (`last`/`before`, one downstream call per page) | planned | — |
+| 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |

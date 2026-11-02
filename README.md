@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-598%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-626%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -263,6 +263,10 @@ Two custom GraphQL **validation rules** run before execution (`src/gateway/secur
 
 Both surface a typed error (`extensions.code = QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) and are covered by unit + HTTP integration tests.
 
+Admission runs cheapest check first, so a hostile document is refused quickly instead of stalling the event loop (and every concurrent caller) for seconds in graphql-js's own validation, some of whose specified rules are quadratic in repeated fields. The cap bounds that work rather than removing it: the worst accepted document observed under the cap spends about 150 ms in validation, while an oversized one is refused before validation starts:
+- **Token cap.** A document of more than **2000** lexical tokens (names, punctuators, strings, numbers) is refused at parse time, before any validation, with `extensions.code = QUERY_TOO_LARGE` and `extensions.maxTokens = 2000`, and makes 0 downstream calls. Comments and whitespace are not counted. The cap is fixed and independent of `maxDepth`/`maxComplexity`; it applies to POST, GET and every element of a [batch](#request-batching). For scale, the 100-alias budget example below is about 1 400 tokens.
+- **Gateway limits before spec rules.** The depth and complexity rules run on their own before graphql-js's specified validation rules. When they reject, only their errors are returned (`QUERY_TOO_DEEP` and `QUERY_TOO_COMPLEX` can appear together), with no `GRAPHQL_VALIDATION_FAILED` errors alongside. A document within the limits still gets full spec validation.
+
 ### Partial errors & null propagation
 Root-level `Query.author` and `Query.book` return structured NOT_FOUND errors when the requested id does not exist: `data.author: null` (or `data.book: null`) plus an entry in `errors[]` with `extensions: { code: "NOT_FOUND", id: "<requested-id>" }`, letting clients correlate exactly which entity was missing. Back-edge resolvers (`Book.author`, `Review.book`) follow the same pattern for non-null fields — a missing referenced entity throws a `GraphQLError` (`code: NOT_FOUND`), which triggers GraphQL's standard null-propagation: the error surfaces in `errors[]` and null bubbles to the nearest nullable parent rather than corrupting the response. DataLoaders return `null` for a missing single-entity key (never throw at the batch level), so a bad id degrades gracefully.
 
@@ -299,12 +303,13 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 598 tests across 36 files (Vitest), all green:
+`npm test` — 626 tests across 37 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
 - **Library entry** — imports from the barrel (`lib-entry.test.ts`), boots a gateway against the bundled backend, and asserts a successful query round-trip.
 - **Built package** (`test_iter62_behavior.test.ts`) — builds with `tsconfig.build.json` into a temp dir, imports the package by name from plain Node ESM (no loader), and type-checks a NodeNext consumer that must reject a wrong-typed `GatewayOptions`.
+- **Hostile documents** (`test_iter66_behavior.test.ts`): the 2000-token cap boundary, fast refusal of a 32 000-token document, no stall for a concurrent caller, and limit errors returned alone at 0 downstream calls.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
 ```ts

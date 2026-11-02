@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-66
+    lenses: hardening/DX
+    - Candidate A1 -- Relay backward pagination: `authors(last: Int, before: String)` pages backward over the same `/authors?offset&limit` route, in one downstream call
+    - Candidate A2 -- Opt-in shared TTL cache for by-key downstream results (`entityCacheTtlMs` / `ENTITY_CACHE_TTL_MS`): a repeat query within the TTL makes 0 downstream calls
+    - Candidate A3 -- Persisted-operation allowlist (`allowedOperations` / `ALLOWED_OPERATIONS_FILE`): only documents the operator migrated may execute; anything else is refused before parse with 0 downstream calls
+    - Candidate B1 -- One 40 KB query freezes the whole gateway for about 7 s. Run the gateway's own linear depth/complexity rules first, and add a parser token cap, so a hostile document is refused in milliseconds.
+    - Candidate B2 -- Every non-HTTP-status downstream failure reaches clients as an untyped `"Unexpected error."`. Give each failure class a typed code.
+    - Candidate B3 -- No request-body size limit: a 100 MB POST is read whole into memory and answered 200. Add a byte cap with HTTP 413.
+    winner: B1
+    ship: pending (not yet decided)
   iter-65
     lenses: narrative-and-docs
     - Candidate A1 -- README §7's "sample query costs 351" figure was never true (the benchmark query costs 356, the §3 sample costs 501), and test_iter59 pins the wrong literal. Derive the figure from a live run instead.
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Persisted operations: automatic persisted queries (APQ hash → document) plus an opt-in allowlist mode that refuses unknown documents with a typed error and 0 downstream calls
     - Candidate B3 -- Edge correlation id: the gateway mints `x-request-id` when the caller sent none, echoes it on the response, and stamps it on every downstream REST call of that request
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED cd45511
   iter-64
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Edge lookahead on `Book.author`: `book(id){ author{ books } }` starts the `books/by-author` batch alongside the author fetch (one serial hop removed, same call count)
@@ -321,4 +331,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-32 scouted iterations
+33 scouted iterations

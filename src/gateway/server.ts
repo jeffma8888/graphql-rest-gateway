@@ -1,5 +1,5 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
-import { getOperationAST, type ExecutionResult } from 'graphql';
+import { getOperationAST, validate, type DocumentNode, type ExecutionResult, type GraphQLError } from 'graphql';
 import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
 import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
@@ -12,6 +12,7 @@ import {
   variableResolver,
 } from './security/complexity.js';
 import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
+import { parseWithTokenLimit } from './security/token-limit.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -60,11 +61,36 @@ function validateMaxBatchSize(value: number | undefined): void {
   }
 }
 
+/**
+ * Edge admission control, cheapest check first. WHY this order: the token
+ * cap bounds the document at parse time, then the gateway's own linear
+ * depth/complexity rules run on their own, and only a document within those
+ * limits reaches graphql-js's specified rules (some of which are quadratic).
+ * A limit rejection is returned alone, so a hostile document never pays for,
+ * or reports, spec-rule validation. Those rules also fill the shared
+ * validation cache that `queryComplexityPlugin` reads, so they are not added
+ * to the spec-rule pass a second time.
+ */
 function securityPlugin(maxDepth: number, maxComplexity: number): Plugin {
+  // Per gateway (its limits are fixed) and per parsed document: Yoga's parse
+  // cache hands repeat queries the same DocumentNode, so the walk runs once.
+  // Keyed on the document only because the schema is fixed per gateway; a
+  // future schema swap (setSchema) would need the schema in the key too.
+  const limitErrors = new WeakMap<DocumentNode, readonly GraphQLError[]>();
   return {
-    onValidate({ addValidationRule }) {
-      addValidationRule(depthLimit(maxDepth));
-      addValidationRule(complexityLimit(maxComplexity));
+    onParse({ setParseFn }) {
+      setParseFn(parseWithTokenLimit);
+    },
+    onValidate({ params, setResult }) {
+      let errors = limitErrors.get(params.documentAST);
+      if (!errors) {
+        errors = validate(params.schema, params.documentAST, [
+          depthLimit(maxDepth),
+          complexityLimit(maxComplexity),
+        ]);
+        limitErrors.set(params.documentAST, errors);
+      }
+      if (errors.length > 0) setResult(errors);
     },
   };
 }
