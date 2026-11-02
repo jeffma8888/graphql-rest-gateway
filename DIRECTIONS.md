@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-69
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1: Delete the four "working tree must match git HEAD" test guards (iter-62/64/66/68), which turn the suite red for any legitimate edit
+    - Candidate A2: One admission rule instead of `depthLimit` + `complexityLimit`. Delete `depth-limit.ts` and the cross-rule `-1` sentinel protocol, which currently loses the depth and re-walks every request
+    - Candidate A3: Delete the reserved `requireAuth` helper, its never-emitted `UNAUTHENTICATED` code and the README sentence that apologises for them (re-proposed; iter-68 B2)
+    - Candidate B1 -- Request-scoped dedupe of identical list pages: one `/authors?offset&limit` call per distinct page per edge HTTP request, so a batch of N identical list operations costs what one costs
+    - Candidate B2 -- Downstream transport on a keep-alive `node:http(s)` agent instead of global `fetch`: about 25% less CPU per request, about 18% more req/s
+    - Candidate B3 -- `Book.author` lookahead (roadmap row 31): `book(id){ author{ books } }` starts `/books/by-author` alongside `/authors/by-ids`, cutting 3 serial hops to 2 with the same call count
+    winner: B1
+    ship: pending (not yet decided)
   iter-68
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- `npm start` runs the check-backend pre-flight before it listens (`PREFLIGHT=warn|fail`)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Delete the reserved `requireAuth` helper, its never-emitted `UNAUTHENTICATED` code, and the README sentence that apologises for them
     - Candidate B3 -- One positive-integer rule for every numeric `createGateway` option (collapse `validateMaxBatchSize` + `validateMaxDownstreamCalls`)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 8245c81
   iter-67
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Opt-in batching undoes the iter-66 stall fix: one POST of 200 cap-sized documents freezes every caller for 6.5 s, so the token cap should count per edge HTTP request, not per operation
@@ -351,4 +361,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-35 scouted iterations
+36 scouted iterations

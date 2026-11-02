@@ -62,3 +62,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
 | 41 | `npm start` opt-in pre-flight (`PREFLIGHT=warn\|fail`) runs check-backend before listening | planned | — |
 | 42 | `check-backend` checks authenticated backends (`--header`) and honours `DOWNSTREAM_TIMEOUT_MS` with per-route latency | planned | — |
+| 43 | Identical `authors(first, after)` list pages fetched once per edge HTTP request (batch of 10 identical ops: 12 → 3 calls) | done | 69 |

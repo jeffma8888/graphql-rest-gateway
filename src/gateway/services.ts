@@ -1,5 +1,5 @@
 import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
-import type { DataSources } from './datasources/index.js';
+import type { AuthorPage, DataSources } from './datasources/index.js';
 import type { Loaders } from './loaders.js';
 import { buildConnection, offsetFromCursor, type Connection } from './pagination/relay.js';
 
@@ -13,10 +13,27 @@ import { buildConnection, offsetFromCursor, type Connection } from './pagination
 const MAX_PAGE_SIZE = 100;
 
 export class AuthorService {
+  /**
+   * Request-scoped memo of `/authors` pages keyed by the exact page sent
+   * downstream (`offset:limit`, after cursor decode and clamp). By-key loaders
+   * already dedupe across a batch, but the list root calls the datasource
+   * directly, so without this N identical batched ops (or a `list`/`count`
+   * alias pair) would each re-fetch the same page. The promise is stored
+   * before it settles so concurrent ops share the in-flight call, and a
+   * rejection is kept so a failing page is called once, not retried per op.
+   * `null` when the loaders run without a cache (NAIVE): no dedupe at all.
+   * Safe only because the graph is read-only (no `Mutation` type): a future
+   * write path must clear `pages`, or later ops in a batch see stale pages.
+   */
+  private readonly pages: Map<string, Promise<AuthorPage>> | null;
+
   constructor(
     private readonly ds: DataSources,
     private readonly loaders: Loaders,
-  ) {}
+    dedupePages: boolean,
+  ) {
+    this.pages = dedupePages ? new Map() : null;
+  }
 
   getAuthor(id: string): Promise<AuthorRow | null> {
     return this.loaders.authorById.load(id);
@@ -25,9 +42,21 @@ export class AuthorService {
   async listConnection(first: number, after?: string | null): Promise<Connection<AuthorRow>> {
     const limit = Math.min(Math.max(first, 0), MAX_PAGE_SIZE);
     const offset = offsetFromCursor(after);
-    const { items, total } = await this.ds.author.listAuthors(offset, limit);
+    const { items, total } = await this.fetchPage(offset, limit);
     for (const author of items) this.loaders.authorById.prime(author.id, author);
     return buildConnection(items, offset, total);
+  }
+
+  /** One downstream call per distinct (offset, limit) page per context. */
+  private fetchPage(offset: number, limit: number): Promise<AuthorPage> {
+    if (this.pages === null) return this.ds.author.listAuthors(offset, limit);
+    const key = `${offset}:${limit}`;
+    let page = this.pages.get(key);
+    if (page === undefined) {
+      page = this.ds.author.listAuthors(offset, limit);
+      this.pages.set(key, page);
+    }
+    return page;
   }
 }
 
@@ -98,10 +127,12 @@ export interface Services {
 /**
  * `prefetch` must mirror the loaders' `cache` option: a speculative load only
  * pays off when the child resolver's later load() is served from that cache.
+ * The same flag gates the author page memo, so NAIVE stays a true no-cache
+ * baseline (every resolver call is a downstream call).
  */
 export function buildServices(ds: DataSources, loaders: Loaders, prefetch: boolean): Services {
   return {
-    author: new AuthorService(ds, loaders),
+    author: new AuthorService(ds, loaders, prefetch),
     book: new BookService(loaders, prefetch),
     review: new ReviewService(loaders, prefetch),
   };
