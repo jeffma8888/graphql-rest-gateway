@@ -54,9 +54,10 @@ function readInt(name: string, raw: string | undefined, min: 0 | 1): number | un
  * Only http(s) makes sense for a REST backend; `localhost:4001` parses as protocol `localhost:`.
  * A path prefix (`/api/v1`) is honoured downstream, but a query string or fragment would be
  * silently discarded on every call, so it is rejected. The raw `?`/`#` check catches a bare
- * `http://h/?`, whose parsed `search` is empty.
+ * `http://h/?`, whose parsed `search` is empty. Exported so `npm run check-backend`
+ * rejects exactly what `npm start` rejects, with the same message.
  */
-function readRestBaseUrl(raw: string | undefined): string | undefined {
+export function readRestBaseUrl(raw: string | undefined): string | undefined {
   if (isUnset(raw)) return undefined;
   let parsed: URL;
   try {

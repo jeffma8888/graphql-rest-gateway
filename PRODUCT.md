@@ -55,3 +55,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
 | 34 | Relay backward pagination on `Query.authors` (`last`/`before`, one downstream call per page) | planned | — |
 | 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |
+| 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
+| 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s) | planned | — |
+| 38 | Numeric library options fail fast (`maxDepth`/`maxComplexity`/`downstreamTimeoutMs` NaN/0/2.5 → `RangeError`) | planned | — |
+| 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS) | planned | — |

@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-626%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-685%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -78,6 +78,7 @@ Other entry points:
 | --- | --- |
 | `npm start` | GraphQL gateway (GraphiQL) in front of the bundled REST backend, or your own via `REST_BASE_URL` (see below) |
 | `npm run backend` | Just the bundled REST backend (`REST_PORT`, `REST_LATENCY_MS`) |
+| `npm run check-backend` | Pre-flight: checks `REST_BASE_URL` (or the bundled backend) against the REST contract, PASS/FAIL per route (`--json`; exit 0/1/2) |
 | `npm run benchmark` | Prints the naive-vs-batched downstream call table (`--json` for machine-readable output, `--threshold N` exits 1 when factor < N) |
 | `npm test` | Full test suite (unit + integration + N+1 regression) |
 | `npm run coverage` | Tests with an istanbul coverage report |
@@ -117,6 +118,21 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 > **Shutdown.** On SIGTERM/SIGINT, `npm start` stops new work at once: any request that still reaches it gets `503` with `connection: close`, and the port stops accepting connections. In-flight requests drain (bounded at 5 s). Then the remaining sockets, including idle keep-alive ones, are closed and the process exits 0, so a load balancer's reused connections cannot hold shutdown open.
 
 > An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. A path prefix in `REST_BASE_URL` is honoured: `REST_BASE_URL=http://127.0.0.1:4001/api/v1` calls `/api/v1/authors`, `/api/v1/books/by-author`, and so on (trailing slashes are ignored). A query string or fragment in `REST_BASE_URL` is rejected at startup.
+
+**Check your backend first: `npm run check-backend`.** The gateway does not refuse a backend that deviates from the contract. It returns wrong data with HTTP 200. For example, `/books/by-author` rows keyed `author_id` instead of `authorId` give every author `books: []` with no error, and snake_case rows on `/authors/by-ids` give a false `NOT_FOUND`. The check calls each of the 5 routes once, on `REST_BASE_URL` (path prefix honoured exactly as the gateway joins it) or on the bundled backend when it is unset. Each call is seeded from the previous answer: `/authors?offset=0&limit=10`, then the first author by id, the books of all returned authors, the first book by id, and the reviews of all returned books. It verifies the response shape, every row field and its JSON type (`id`, `name`, `bio`; `id`, `authorId`, `title`, `year`; `id`, `bookId`, `body`, `reviewer`, `rating`), the join keys, and that by-id lookups return the requested id. It names the first wrong field per route:
+
+```bash
+REST_BASE_URL=http://127.0.0.1:4001/api/v1 npm run check-backend
+# Checking http://127.0.0.1:4001/api/v1 -- REST_BASE_URL
+# PASS /authors
+# PASS /authors/by-ids
+# FAIL /books/by-author -- row 0: field "authorId" is missing (found "author_id"; the contract uses camelCase)
+# FAIL /books/by-ids -- skipped: needs a passing /books/by-author
+# FAIL /reviews/by-book -- skipped: needs a passing /books/by-author
+# 2/5 routes match the REST contract
+```
+
+Exit codes: `0` when all 5 routes pass, `1` on any mismatch (including an unreachable backend, a non-2xx status or a non-JSON body), and `2` on a configuration error. A configuration error is an invalid `REST_BASE_URL` (the same message `npm start` gives) or an unknown argument, and no request is made. `--json` prints one document instead, `{ baseUrl, backend: "bundled" | "external", ok, routes: [{ route, ok, problem }] }`, with the same exit code. An empty `/reviews/by-book` list passes, because reviews are the leaf. Empty authors or books fail, because the later routes need ids to check. The check makes read-only `GET`s with a fixed 5 s timeout per call. It does not check pagination semantics, extra fields, or auth headers.
 
 ### Programmatic usage
 
@@ -303,13 +319,14 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 626 tests across 37 files (Vitest), all green:
+`npm test` — 685 tests across 38 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
 - **Library entry** — imports from the barrel (`lib-entry.test.ts`), boots a gateway against the bundled backend, and asserts a successful query round-trip.
 - **Built package** (`test_iter62_behavior.test.ts`) — builds with `tsconfig.build.json` into a temp dir, imports the package by name from plain Node ESM (no loader), and type-checks a NodeNext consumer that must reject a wrong-typed `GatewayOptions`.
 - **Hostile documents** (`test_iter66_behavior.test.ts`): the 2000-token cap boundary, fast refusal of a 32 000-token document, no stall for a concurrent caller, and limit errors returned alone at 0 downstream calls.
+- **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
 ```ts

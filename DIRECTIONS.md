@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-67
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- Opt-in batching undoes the iter-66 stall fix: one POST of 200 cap-sized documents freezes every caller for 6.5 s, so the token cap should count per edge HTTP request, not per operation
+    - Candidate A2 -- Wrong numeric library options silently turn off the gateway's limits: `createGateway({ maxComplexity: NaN })` or `{ maxDepth: NaN }` accepts everything, and a bad `downstreamTimeoutMs` makes every request fail with an untyped error
+    - Candidate A3 -- A misbehaving downstream can exhaust the gateway's memory: a 200 MB 2xx REST body is read whole (+704 MB RSS) to answer a 2-field query, with no cap and no typed error
+    - Candidate B1 -- `npm run check-backend`: test an external REST service against the gateway's REST contract before you point clients at it
+    - Candidate B2 -- `npm run benchmark -- --query <file.graphql> [--max-calls N]`: measure the user's own operation through the real gateway
+    - Candidate B3 -- Export the typed error-code vocabulary (`GATEWAY_ERROR_CODES`, `type GatewayErrorCode`) from the package entry
+    winner: B1
+    ship: pending (not yet decided)
   iter-66
     lenses: hardening/DX
     - Candidate A1 -- Relay backward pagination: `authors(last: Int, before: String)` pages backward over the same `/authors?offset&limit` route, in one downstream call
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Every non-HTTP-status downstream failure reaches clients as an untyped `"Unexpected error."`. Give each failure class a typed code.
     - Candidate B3 -- No request-body size limit: a 100 MB POST is read whole into memory and answered 200. Add a byte cap with HTTP 413.
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 438a39e
   iter-65
     lenses: narrative-and-docs
     - Candidate A1 -- README §7's "sample query costs 351" figure was never true (the benchmark query costs 356, the §3 sample costs 501), and test_iter59 pins the wrong literal. Derive the figure from a live run instead.
@@ -331,4 +341,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-33 scouted iterations
+34 scouted iterations

@@ -43,6 +43,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "backend": "tsx src/rest-backend/standalone.ts",
+    "check-backend": "tsx src/check-backend-main.ts",
     "benchmark": "tsx benchmark/benchmark.ts",
     "test": "vitest run",
     "test:watch": "vitest",
