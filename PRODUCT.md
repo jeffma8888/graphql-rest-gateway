@@ -59,3 +59,6 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s) | planned | — |
 | 38 | Numeric library options fail fast (`maxDepth`/`maxComplexity`/`downstreamTimeoutMs` NaN/0/2.5 → `RangeError`) | planned | — |
 | 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS) | planned | — |
+| 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
+| 41 | `npm start` opt-in pre-flight (`PREFLIGHT=warn\|fail`) runs check-backend before listening | planned | — |
+| 42 | `check-backend` checks authenticated backends (`--header`) and honours `DOWNSTREAM_TIMEOUT_MS` with per-route latency | planned | — |

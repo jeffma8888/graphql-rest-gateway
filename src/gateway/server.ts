@@ -4,11 +4,11 @@ import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
 import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
 import type { LoaderOptions } from './loaders.js';
-import { depthLimit, measureDepth } from './security/depth-limit.js';
+import { depthLimit } from './security/depth-limit.js';
 import {
   complexityLimit,
   complexityError,
-  estimateComplexity,
+  measureOperation,
   variableResolver,
 } from './security/complexity.js';
 import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
@@ -136,21 +136,13 @@ function queryComplexityPlugin(maxComplexity: number, defaultListSize: number): 
         // The operation actually being executed, not merely the first in the document.
         const op = getOperationAST(doc, args.operationName);
         if (!op) return;
-        const rootType =
-          op.operation === 'query'
-            ? gqlSchema.getQueryType()
-            : op.operation === 'mutation'
-              ? gqlSchema.getMutationType()
-              : gqlSchema.getSubscriptionType();
-        cost = estimateComplexity(
-          op.selectionSet,
-          rootType,
-          (name) => gqlSchema.getType(name) ?? undefined,
+        ({ cost, depth } = measureOperation(
+          gqlSchema,
+          op,
           fragments,
           defaultListSize,
           variableResolver(op, args.variableValues),
-        );
-        depth = measureDepth(op.selectionSet, fragments);
+        ));
         if (cost > maxComplexity) {
           setResultAndStopExecution({ errors: [complexityError(cost, maxComplexity, op)] });
           return;

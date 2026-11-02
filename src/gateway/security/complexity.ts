@@ -8,6 +8,8 @@ import {
   isInterfaceType,
   type GraphQLType,
   type GraphQLNamedType,
+  type GraphQLObjectType,
+  type GraphQLSchema,
 } from 'graphql';
 import type {
   ValidationRule,
@@ -73,6 +75,10 @@ interface CostContext {
   resolveVariable?: VariableResolver;
   /** Set when a fan-out argument references a variable, i.e. cost is per-request. */
   usesVariables: boolean;
+  /** Finished fragments' results, by name, for this walk only. */
+  memo: Map<string, Measure>;
+  /** Fragments currently being walked, so a cyclic spread terminates. */
+  inProgress: Set<string>;
 }
 
 /**
@@ -107,26 +113,41 @@ export function complexityError(
   );
 }
 
-function costOfSelectionSet(
+/** The two numbers one walk yields: estimated cost and field-nesting depth. */
+export interface Measure {
+  cost: number;
+  depth: number;
+}
+
+/**
+ * Walks one selection set, returning cost and depth together. WHY one walk
+ * with a per-walk memo: a fragment's result depends only on its own body and
+ * type condition (never on where it is spread), so each named fragment is
+ * walked at most once and repeat spreads reuse the result. Without the memo a
+ * cap-respecting chain `fragment Fi { ...F(i+1) ...F(i+1) }` costs 2^n visits.
+ * Repeats still ADD their cost; only the walking is shared. A fragment still
+ * being walked (a cycle, which spec rules reject later) counts as {0, 0}.
+ */
+function measureSelectionSet(
   selectionSet: SelectionSetNode,
   parentType: GraphQLNamedType | undefined | null,
   cc: CostContext,
-  visited: Set<string>,
-): number {
+): Measure {
   const fields =
     parentType && (isObjectType(parentType) || isInterfaceType(parentType))
       ? parentType.getFields()
       : {};
 
   let cost = 0;
+  let depth = 0;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       if (selection.name.value.startsWith('__')) continue;
       const fieldDef = fields[selection.name.value];
       const namedChildType = fieldDef ? getNamedType(fieldDef.type) : undefined;
-      const childCost = selection.selectionSet
-        ? costOfSelectionSet(selection.selectionSet, namedChildType, cc, visited)
-        : 0;
+      const child = selection.selectionSet
+        ? measureSelectionSet(selection.selectionSet, namedChildType, cc)
+        : { cost: 0, depth: 0 };
 
       let multiplier = 1;
       if (fieldDef && !RELAY_WRAPPER_FIELDS.has(selection.name.value)) {
@@ -134,23 +155,67 @@ function costOfSelectionSet(
         if (first !== undefined) multiplier = first;
         else if (isListDeep(fieldDef.type)) multiplier = cc.defaultListSize;
       }
-      cost += 1 + multiplier * childCost;
+      cost += 1 + multiplier * child.cost;
+      depth = Math.max(depth, 1 + child.depth);
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
       const typeName = selection.typeCondition?.name.value;
       const target = typeName ? cc.getType(typeName) : parentType;
-      cost += costOfSelectionSet(selection.selectionSet, target, cc, visited);
+      const child = measureSelectionSet(selection.selectionSet, target, cc);
+      cost += child.cost;
+      depth = Math.max(depth, child.depth);
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
-      const name = selection.name.value;
-      if (visited.has(name)) continue;
-      const fragment = cc.fragments.get(name);
-      if (!fragment) continue;
-      const target = cc.getType(fragment.typeCondition.name.value);
-      visited.add(name);
-      cost += costOfSelectionSet(fragment.selectionSet, target, cc, visited);
-      visited.delete(name);
+      const child = measureFragment(selection.name.value, cc);
+      cost += child.cost;
+      depth = Math.max(depth, child.depth);
     }
   }
-  return cost;
+  return { cost, depth };
+}
+
+/** Memoised by name for the duration of one walk; see `measureSelectionSet`. */
+function measureFragment(name: string, cc: CostContext): Measure {
+  const done = cc.memo.get(name);
+  if (done) return done;
+  const fragment = cc.fragments.get(name);
+  if (!fragment || cc.inProgress.has(name)) return { cost: 0, depth: 0 };
+  cc.inProgress.add(name);
+  const target = cc.getType(fragment.typeCondition.name.value);
+  const result = measureSelectionSet(fragment.selectionSet, target, cc);
+  cc.inProgress.delete(name);
+  cc.memo.set(name, result);
+  return result;
+}
+
+/** The root type an operation's selection set is costed against. */
+function rootTypeOf(schema: GraphQLSchema, op: OperationDefinitionNode): GraphQLObjectType | null | undefined {
+  if (op.operation === 'query') return schema.getQueryType();
+  return op.operation === 'mutation' ? schema.getMutationType() : schema.getSubscriptionType();
+}
+
+/**
+ * Measures one operation (validation rules, execute phase, unit tests).
+ * Pass `resolveVariable` to count variable-supplied `first`/`last` with their
+ * runtime values; without them they count as omitted arguments.
+ * `usesVariables` reports whether the cost depends on a request's variables.
+ */
+export function measureOperation(
+  schema: GraphQLSchema,
+  op: OperationDefinitionNode,
+  fragments: Map<string, FragmentDefinitionNode>,
+  defaultListSize = 5,
+  resolveVariable?: VariableResolver,
+): Measure & { usesVariables: boolean } {
+  const cc: CostContext = {
+    getType: (name) => schema.getType(name) ?? undefined,
+    fragments,
+    defaultListSize,
+    resolveVariable,
+    usesVariables: false,
+    memo: new Map(),
+    inProgress: new Set(),
+  };
+  const { cost, depth } = measureSelectionSet(op.selectionSet, rootTypeOf(schema, op), cc);
+  return { cost, depth, usesVariables: cc.usesVariables };
 }
 
 export function complexityLimit(maxComplexity: number, defaultListSize = 5): ValidationRule {
@@ -159,25 +224,17 @@ export function complexityLimit(maxComplexity: number, defaultListSize = 5): Val
     const schema = context.getSchema();
     const cached = getValidationResult(doc);
     const fragments = cached?.fragments ?? buildFragmentMap(doc);
-    const getType = (name: string): GraphQLNamedType | undefined => schema.getType(name) ?? undefined;
     const operationCount = doc.definitions.filter((d) => d.kind === Kind.OPERATION_DEFINITION).length;
 
     return {
       OperationDefinition(node) {
-        const cc: CostContext = { getType, fragments, defaultListSize, usesVariables: false };
-        const rootType =
-          node.operation === 'query'
-            ? schema.getQueryType()
-            : node.operation === 'mutation'
-              ? schema.getMutationType()
-              : schema.getSubscriptionType();
-        const staticCost = costOfSelectionSet(node.selectionSet, rootType, cc, new Set());
+        const measured = measureOperation(schema, node, fragments, defaultListSize);
         // WHY -1: the WeakMap entry is per *document* and shared by every
         // request that sends it, so a variable-dependent cost must never be
         // cached; nor may one operation's cost stand in for a sibling's in a
         // multi-operation document. The sentinel makes the execute phase
         // recompute (and enforce) for the operation actually run.
-        const cost = cc.usesVariables || operationCount > 1 ? -1 : staticCost;
+        const cost = measured.usesVariables || operationCount > 1 ? -1 : measured.cost;
         if (cached) {
           cached.cost = cost;
         } else {
@@ -189,21 +246,4 @@ export function complexityLimit(maxComplexity: number, defaultListSize = 5): Val
       },
     };
   };
-}
-
-/**
- * Computes the cost without a limit (execute phase, tooling, unit tests).
- * Pass `resolveVariable` to count variable-supplied `first`/`last` with their
- * runtime values; without it they count as omitted arguments.
- */
-export function estimateComplexity(
-  selectionSet: SelectionSetNode,
-  parentType: GraphQLNamedType | undefined | null,
-  getType: (name: string) => GraphQLNamedType | undefined,
-  fragments: Map<string, FragmentDefinitionNode>,
-  defaultListSize = 5,
-  resolveVariable?: VariableResolver,
-): number {
-  const cc: CostContext = { getType, fragments, defaultListSize, resolveVariable, usesVariables: false };
-  return costOfSelectionSet(selectionSet, parentType, cc, new Set());
 }

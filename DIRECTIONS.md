@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-68
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- `npm start` runs the check-backend pre-flight before it listens (`PREFLIGHT=warn|fail`)
+    - Candidate A2 -- `check-backend` can check an authenticated backend: repeatable `--header 'name: value'`, validated like `FORWARD_HEADERS`
+    - Candidate A3 -- `check-backend` honours `npm start`'s `DOWNSTREAM_TIMEOUT_MS` and reports per-route latency, so a green check means the gateway will not time out
+    - Candidate B1 -- One fragment-memoised selection walk yields both cost and depth (delete depth-limit.ts's private walker and `measureDepth`), which also ends a 2^n validation stall
+    - Candidate B2 -- Delete the reserved `requireAuth` helper, its never-emitted `UNAUTHENTICATED` code, and the README sentence that apologises for them
+    - Candidate B3 -- One positive-integer rule for every numeric `createGateway` option (collapse `validateMaxBatchSize` + `validateMaxDownstreamCalls`)
+    winner: B1
+    ship: pending (not yet decided)
   iter-67
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Opt-in batching undoes the iter-66 stall fix: one POST of 200 cap-sized documents freezes every caller for 6.5 s, so the token cap should count per edge HTTP request, not per operation
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `npm run benchmark -- --query <file.graphql> [--max-calls N]`: measure the user's own operation through the real gateway
     - Candidate B3 -- Export the typed error-code vocabulary (`GATEWAY_ERROR_CODES`, `type GatewayErrorCode`) from the package entry
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 9080f3c
   iter-66
     lenses: hardening/DX
     - Candidate A1 -- Relay backward pagination: `authors(last: Int, before: String)` pages backward over the same `/authors?offset&limit` route, in one downstream call
@@ -341,4 +351,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-34 scouted iterations
+35 scouted iterations
