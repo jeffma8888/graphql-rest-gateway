@@ -9,9 +9,12 @@
 type Query {
   """
   Relay-style cursor-paginated list of authors.
-  `first` bounds the page size; `after` is an opaque cursor from a previous page.
+  Forward: `first` (default 10 when neither `first` nor `last` is given) items
+  after the opaque `after` cursor. Backward: the `last` items before the opaque
+  `before` cursor (or before the end of the list). `first` and `last` together
+  is a BAD_PAGINATION_ARGS error. Page sizes clamp to 0..100.
   """
-  authors(first: Int = 10, after: String): AuthorConnection!
+  authors(first: Int, after: String, last: Int, before: String): AuthorConnection!
 
   "Fetch a single author by id (batched via DataLoader under the hood)."
   author(id: ID!): Author

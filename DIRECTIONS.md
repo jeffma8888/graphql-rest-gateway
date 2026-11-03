@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-71
+    lenses: narrative-and-docs, new-capability
+    - A1 -- The README's Programmatic usage snippet never exits: add `await app.close()` and run the snippet as a doc-test
+    - A2 -- README pagination contract and the GraphiQL-visible SDL descriptions told truthfully, checked against live behaviour
+    - A3 -- Stale figures pinned as literals: coverage ~84/86/89 % (really 94/96/96 %) and "351" (really 356 / 501), re-derived from live runs
+    - Candidate B1 -- Relay backward pagination on `Query.authors` (`last` / `before`), one downstream call per page (row 34)
+    - Candidate B2 -- Operator-side downstream call hook: `createGateway({ onDownstreamCall })` gets `{ path, status, durationMs, errorCode, outcome }` for every REST call (row 10, dependency-free first slice)
+    - Candidate B3 -- Opt-in cross-request entity cache (`entityCacheTtlMs` / `ENTITY_CACHE_TTL_MS`): a repeat by-id query within the TTL makes 0 downstream calls (row 9)
+    winner: B1
+    ship: pending (not yet decided)
   iter-70
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- `Book.author` lookahead (roadmap row 31): `book(id){ author{ books } }` starts `/books/by-author` in the same tick as `/authors/by-ids`, so 3 serial hops become 2 at an identical call count
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - B2 -- Record the "read-only graph" invariant as a §9 design decision, with a tripwire on `type Mutation`
     - B3 -- §8 "N tests across M files" stops being a hand-maintained guess: M derived from the tree, N floor raised to now
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 53bc47a
   iter-69
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1: Delete the four "working tree must match git HEAD" test guards (iter-62/64/66/68), which turn the suite red for any legitimate edit
@@ -371,4 +381,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-37 scouted iterations
+38 scouted iterations

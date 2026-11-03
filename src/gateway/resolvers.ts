@@ -21,7 +21,7 @@ import { willResolveChild } from './lookahead.js';
 export const resolvers: Resolvers = {
   // Roots that call `willResolveChild` must be listed in BY_ID_ROOTS (lookahead.ts).
   Query: {
-    authors: (_parent, args, ctx) => ctx.services.author.listConnection(args.first ?? 10, args.after),
+    authors: (_parent, args, ctx) => ctx.services.author.listConnection(args),
     author: async (_parent, args, ctx, info) => {
       if (willResolveChild(info, 'books')) ctx.services.book.prefetchBooksForAuthor(args.id);
       const author = await ctx.services.author.getAuthor(args.id);

@@ -62,7 +62,10 @@ export type Query = {
   author?: Maybe<Author>;
   /**
    * Relay-style cursor-paginated list of authors.
-   * `first` bounds the page size; `after` is an opaque cursor from a previous page.
+   * Forward: `first` (default 10 when neither `first` nor `last` is given) items
+   * after the opaque `after` cursor. Backward: the `last` items before the opaque
+   * `before` cursor (or before the end of the list). `first` and `last` together
+   * is a BAD_PAGINATION_ARGS error. Page sizes clamp to 0..100.
    */
   authors: AuthorConnection;
   /** Fetch a single book by id (batched via DataLoader under the hood). */
@@ -77,7 +80,9 @@ export type QueryAuthorArgs = {
 
 export type QueryAuthorsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -239,7 +244,7 @@ export type PageInfoResolvers<ContextType = GatewayContext, ParentType extends R
 
 export type QueryResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
   author?: Resolver<Maybe<ResolversTypes['Author']>, ParentType, ContextType, RequireFields<QueryAuthorArgs, 'id'>>;
-  authors?: Resolver<ResolversTypes['AuthorConnection'], ParentType, ContextType, RequireFields<QueryAuthorsArgs, 'first'>>;
+  authors?: Resolver<ResolversTypes['AuthorConnection'], ParentType, ContextType, Partial<QueryAuthorsArgs>>;
   book?: Resolver<Maybe<ResolversTypes['Book']>, ParentType, ContextType, RequireFields<QueryBookArgs, 'id'>>;
 }>;
 

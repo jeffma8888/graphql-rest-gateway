@@ -53,7 +53,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 31 | `Book.author` → `Author.books` lookahead (`book(id){author{books}}`: 3 hops → 2, call counts unchanged) | done | 70 |
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
-| 34 | Relay backward pagination on `Query.authors` (`last`/`before`, one downstream call per page) | planned | — |
+| 34 | Relay backward pagination on `Query.authors` (`last`/`before`; 1 call with `before`, ≤2 without) + pages truncated to the clamped size (`first: 0` → empty) | done | 71 |
 | 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
 | 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s) | planned | — |
@@ -64,3 +64,6 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 42 | `check-backend` checks authenticated backends (`--header`) and honours `DOWNSTREAM_TIMEOUT_MS` with per-route latency | planned | — |
 | 43 | Identical `authors(first, after)` list pages fetched once per edge HTTP request (batch of 10 identical ops: 12 → 3 calls) | done | 69 |
 | 44 | Batch-wide lookahead gate: under `maxBatchSize`, one gate-off op turns prefetch off for every op in the POST (mixed batches split today: +1 call) | planned | — |
+| 45 | README pagination truth: out-of-range `after`/`before` cursors return an empty page, not `BAD_CURSOR` (fix sentence + pin it); a past-end `before` must never give `hasPreviousPage: true` with `startCursor: null`; `""` cursors → `BAD_CURSOR` | planned | — |
+| 46 | README Programmatic-usage snippet closes the backend `app` (hangs >30 s today) + doc-test that runs it | planned | — |
+| 47 | Complexity prices the implicit default page size (`authors{…}` with no `first`/`last` costs 34 but fetches 10 rows, like `first: 10` at 331) | planned | — |
