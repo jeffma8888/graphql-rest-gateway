@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-927%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-958%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -119,7 +119,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 
 > An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. A path prefix in `REST_BASE_URL` is honoured: `REST_BASE_URL=http://127.0.0.1:4001/api/v1` calls `/api/v1/authors`, `/api/v1/books/by-author`, and so on (trailing slashes are ignored). A query string or fragment in `REST_BASE_URL` is rejected at startup.
 
-**Check your backend first: `npm run check-backend`.** The gateway does not refuse a backend that deviates from the contract. It returns wrong data with HTTP 200. For example, `/books/by-author` rows keyed `author_id` instead of `authorId` give every author `books: []` with no error, and snake_case rows on `/authors/by-ids` give a false `NOT_FOUND`. The check calls each of the 5 routes once, on `REST_BASE_URL` (path prefix honoured exactly as the gateway joins it) or on the bundled backend when it is unset. Each call is seeded from the previous answer: `/authors?offset=0&limit=10`, then the first author by id, the books of all returned authors, the first book by id, and the reviews of all returned books. It verifies the response shape, every row field and its JSON type (`id`, `name`, `bio`; `id`, `authorId`, `title`, `year`; `id`, `bookId`, `body`, `reviewer`, `rating`), the join keys, and that by-id lookups return the requested id. It names the first wrong field per route:
+**Check your backend first: `npm run check-backend`.** At runtime the gateway refuses a 2xx body with the wrong shape or a missing or mistyped row field (for example `/books/by-author` rows keyed `author_id` instead of `authorId`) as `DOWNSTREAM_BAD_RESPONSE`, but only once a client query hits it. It does not check join keys or ids: rows keyed to an author that was not requested give that author `books: []` with no error, and a by-id answer missing the requested row gives a false `NOT_FOUND`. The check calls each of the 5 routes once, on `REST_BASE_URL` (path prefix honoured exactly as the gateway joins it) or on the bundled backend when it is unset. Each call is seeded from the previous answer: `/authors?offset=0&limit=10`, then the first author by id, the books of all returned authors, the first book by id, and the reviews of all returned books. It verifies the response shape, every row field and its JSON type (`id`, `name`, `bio`; `id`, `authorId`, `title`, `year`; `id`, `bookId`, `body`, `reviewer`, `rating`), the join keys, and that by-id lookups return the requested id. It names the first wrong field per route:
 
 ```bash
 REST_BASE_URL=http://127.0.0.1:4001/api/v1 npm run check-backend
@@ -309,6 +309,8 @@ A legacy REST service usually authorizes each request itself and correlates logs
 ### Downstream error
 When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), the gateway surfaces a typed error (`extensions.code = DOWNSTREAM_ERROR`) with `extensions.status` carrying the HTTP status code. The error message includes the status, status text, and the failed path, letting clients distinguish "the backend returned an error" from "the query itself was invalid."
 
+When the downstream answers 2xx but the body is not valid JSON (a maintenance page, an empty body) or breaks the REST contract (not a JSON array of rows, a row that is not an object, a row field missing or of the wrong JSON type, an `/authors` page that is not `{ items, total }`), the field fails with `extensions.code = DOWNSTREAM_BAD_RESPONSE`, `extensions.status` (the downstream HTTP status) and `extensions.route` (e.g. `/authors/by-ids`) instead of an untyped "Unexpected error.". The message names the route and the first problem, e.g. `Downstream REST response for /books/by-ids breaks the contract: row 0: field "year" must be a number, got a string`. The downstream body is never echoed: values and keys are reported only by JSON type. Other fields of the same query keep their data, the call is counted once in `extensions.downstreamCalls` and is not retried, and extra row fields are allowed. One exception to "not retried": when the failing call was a `Book.author` lookahead prefetch, the field's own load re-sends it once (2 calls). The check covers the whole downstream response, so one bad row fails every field served by that batched call, whether or not the bad field was selected. The row specs are the same module `npm run check-backend` checks against, so the pre-flight and the gateway cannot disagree about the contract.
+
 ### Query complexity metrics
 Every successful response includes `extensions.queryComplexity` with numeric `cost` and `depth` fields — the same values the depth and complexity validation rules compute. Integrators can observe real traffic to tune `maxDepth`/`maxComplexity`, alert on creeping cost before clients trip the hard limit, and prove exactly what each query costs. When a query is rejected by the validation rules (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`), the `queryComplexity` extension is **not** injected — the rejection error already carries the relevant numbers.
 
@@ -325,7 +327,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 927 tests across 43 files (Vitest), all green:
+`npm test` — 958 tests across 44 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -337,6 +339,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **`Book.author` lookahead** (`test_iter70_behavior.test.ts`): `book(id){ author{ books } }` takes 2 serial hops instead of 3 at unchanged call counts and identical data, the gate off-cases (list roots, fragments, `__typename`, `@skip`, NAIVE), the orphan-book +1 call, the budget-2 error path, and mixed HTTP batches.
 - **Backward pagination** (`test_iter71_behavior.test.ts`): `last`/`before` pages, windows from `after` plus `before`, a full backward walk that visits every author once, `first` with `last` refused as `BAD_PAGINATION_ARGS` at 0 calls, clamped and empty pages, and the exact downstream call count of each case.
 - **Options validation** (`test_iter72_behavior.test.ts`): every bad `createGateway` option (NaN/0/Infinity limits, a `downstreamTimeoutMs` above 2147483647, a non-http(s) `restBaseUrl`, a malformed `loaderOptions`, an unknown key with its did-you-mean hint) throws at construction with 0 downstream calls, the CLI rejects `DOWNSTREAM_TIMEOUT_MS` above 2147483647, and the benchmark still costs 3 batched / 21 naive calls.
+- **Contract-breaking 2xx bodies** (`test_iter73_behavior.test.ts`): a stub in front of the bundled backend corrupts one route at a time (an html or empty body, a wrapped list, a null row, a missing, mistyped or snake_case field, a bad `/authors` page) and each becomes `DOWNSTREAM_BAD_RESPONSE` naming the route, with no body text echoed, partial data kept, the call counted once, `DOWNSTREAM_ERROR` unchanged for non-2xx, and the benchmark still at 3 batched / 21 naive calls.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

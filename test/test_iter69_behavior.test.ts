@@ -433,12 +433,10 @@ describe('EB9 - unchanged surfaces', () => {
     if (out !== null) expect(out.trim()).toBe('');
   });
 
-  // SDL + generated types dropped from the list at iter-71 (Relay `last`/`before` args).
-  it('loaders and datasources are unmodified', () => {
-    const out = headPorcelain([
-      'src/gateway/loaders.ts',
-      'src/gateway/datasources',
-    ]);
+  // SDL + generated types dropped from the list at iter-71 (Relay `last`/`before` args);
+  // datasources dropped at iter-73 (2xx bodies checked against the REST contract).
+  it('loaders are unmodified', () => {
+    const out = headPorcelain(['src/gateway/loaders.ts']);
     if (out !== null) expect(out.trim()).toBe('');
   });
 

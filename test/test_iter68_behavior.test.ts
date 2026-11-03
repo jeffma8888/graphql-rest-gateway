@@ -467,9 +467,10 @@ describe('EB10 - static guard: one walker', () => {
 
 // ---------- EB11 ----------
 describe('EB11 - no downstream or loader change', () => {
-  // schema.graphql dropped from the list at iter-71 (Relay `last`/`before` SDL args).
-  it('loaders and datasources are unmodified relative to HEAD', () => {
-    const paths = ['src/gateway/loaders.ts', 'src/gateway/datasources'];
+  // schema.graphql dropped from the list at iter-71 (Relay `last`/`before` SDL args);
+  // datasources dropped at iter-73 (2xx bodies checked against the REST contract).
+  it('loaders are unmodified relative to HEAD', () => {
+    const paths = ['src/gateway/loaders.ts'];
     let out: string;
     try {
       out = execFileSync('git', ['status', '--porcelain', '--', ...paths], { cwd: root, encoding: 'utf8' });

@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { ContractMismatch } from './contract.js';
 
 /**
  * Thin HTTP client for the downstream REST service.
@@ -100,6 +101,45 @@ export function validateForwardHeaders(
   return normalized;
 }
 
+/**
+ * A 2xx downstream body that is not valid JSON or breaks the REST contract.
+ * WHY typed: without it the parse/shape failure escaped as an untyped
+ * "Unexpected error.", indistinguishable from a gateway bug. The message and
+ * extensions name only the route and status, never the body (an error page or
+ * row data is not the client's to see); `detail` keeps the underlying error
+ * for operator tooling and is not serialized into GraphQL responses.
+ */
+export class DownstreamBadResponse extends GraphQLError {
+  constructor(
+    route: string,
+    status: number,
+    problem: string,
+    readonly detail: Error,
+  ) {
+    super(`Downstream REST response for ${route} ${problem}`, {
+      extensions: { code: 'DOWNSTREAM_BAD_RESPONSE', status, route },
+    });
+  }
+}
+
+/** Turns a 2xx body into `T` via `read`, or fails as `DownstreamBadResponse`. */
+function readBody<T>(route: string, status: number, text: string, read: (body: unknown) => T): T {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (err: unknown) {
+    throw new DownstreamBadResponse(route, status, 'is not valid JSON', err as Error);
+  }
+  try {
+    return read(body);
+  } catch (err: unknown) {
+    if (!(err instanceof ContractMismatch)) throw err;
+    throw new DownstreamBadResponse(route, status, `breaks the contract: ${err.message}`, err);
+  }
+}
+
+const parsedJson = (body: unknown): unknown => body;
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -142,7 +182,15 @@ export class RestClient {
     this.stats.byPath[path] = (this.stats.byPath[path] ?? 0) + 1;
   }
 
-  async get<T>(path: string, params?: QueryParams): Promise<T> {
+  /**
+   * Sends one counted GET. `read` checks the parsed body against the contract
+   * and returns it typed. WHY the reader is passed in rather than cast after:
+   * a cast is where a contract-breaking body used to slip through unchecked.
+   * Without a reader the parsed JSON is returned as `unknown`.
+   */
+  get(path: string, params?: QueryParams): Promise<unknown>;
+  get<T>(path: string, params: QueryParams | undefined, read: (body: unknown) => T): Promise<T>;
+  async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
     this.checkBudget();
     this.track(path);
 
@@ -171,7 +219,7 @@ export class RestClient {
         extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
       });
     }
-    return (await res.json()) as T;
+    return readBody(path, res.status, await res.text(), read ?? parsedJson);
   }
 
   resetStats(): void {

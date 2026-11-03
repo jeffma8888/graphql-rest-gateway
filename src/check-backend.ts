@@ -1,16 +1,27 @@
 import { readRestBaseUrl } from './cli.js';
-import { RestClient } from './gateway/datasources/rest-client.js';
+import {
+  AUTHOR_FIELDS,
+  BOOK_FIELDS,
+  ContractMismatch,
+  REVIEW_FIELDS,
+  describeValue,
+  readAuthorPage,
+  readRows as readContractRows,
+  type RowSpec,
+} from './gateway/datasources/contract.js';
+import { DownstreamBadResponse, RestClient } from './gateway/datasources/rest-client.js';
 import type { AuthorRow, BookRow, ReviewRow } from './rest-backend/data.js';
 import { buildBackend } from './rest-backend/server.js';
 
 /**
  * `npm run check-backend`: a REST-contract pre-flight for the strangler-fig
- * on-ramp. WHY it exists: a legacy backend that deviates from the contract
- * (a snake_case `author_id`, a wrapped list) is not refused by the gateway; it
- * answers HTTP 200 with silently wrong data (`books: []`, a false `NOT_FOUND`).
- * This check calls each contract route once, seeded from the previous route's
- * answer, and names the first wrong field, so the operator learns about the
- * mismatch before a client does.
+ * on-ramp. WHY it exists: the gateway refuses a contract-breaking body (a
+ * snake_case `author_id`, a wrapped list) only when a client query hits it,
+ * and it does not check join keys or ids at all, which answer HTTP 200 with
+ * silently wrong data (`books: []`, a false `NOT_FOUND`). This check calls each
+ * contract route once, seeded from the previous route's answer, and names the
+ * first wrong field, so the operator learns about the mismatch before a client
+ * does. The row specs are the gateway's own (`./gateway/datasources/contract`).
  *
  * Side-effect free like `./cli`: no listeners, no `process.exit`. The process
  * concerns live in `./check-backend-main`.
@@ -53,86 +64,18 @@ const CHECK_TIMEOUT_MS = 5000;
 /** Page size for the seeding `/authors` call; one page is enough to exercise every join. */
 const SEED_LIMIT = 10;
 
-type FieldKind = 'string' | 'number';
-
-/**
- * Expected JSON type per row field. WHY a mapped type: `satisfies RowSpec<AuthorRow>`
- * fails to compile if a row type gains, loses or retypes a field, so this second
- * copy of the contract cannot drift from the one the resolvers are typed against.
- */
-type RowSpec<R> = { readonly [K in keyof R]: R[K] extends number ? 'number' : 'string' };
-
-const AUTHOR_FIELDS = { id: 'string', name: 'string', bio: 'string' } as const satisfies RowSpec<AuthorRow>;
-const BOOK_FIELDS = { id: 'string', authorId: 'string', title: 'string', year: 'number' } as const satisfies RowSpec<BookRow>;
-const REVIEW_FIELDS = {
-  id: 'string',
-  bookId: 'string',
-  body: 'string',
-  reviewer: 'string',
-  rating: 'number',
-} as const satisfies RowSpec<ReviewRow>;
-
-/** A contract deviation found in a response body (as opposed to a transport failure). */
-class ContractMismatch extends Error {}
-
-type JsonObject = Record<string, unknown>;
-
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The shared row reader, with values echoed: this report goes to the backend's owner. */
+function readRows<R>(body: unknown, spec: RowSpec<R>): R[] {
+  return readContractRows(body, spec, describeValue);
 }
 
-/** Short, human description of a JSON value for problem messages. */
-function describe(value: unknown): string {
-  if (value === undefined) return 'nothing (field absent)';
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'an array';
-  if (isRecord(value)) return `an object with keys [${Object.keys(value).join(', ')}]`;
-  return `${typeof value} ${JSON.stringify(value)}`;
-}
-
-/** `authorId` → `author_id`: the most common legacy spelling, worth pointing out by name. */
-function snakeCase(key: string): string {
-  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-}
-
-function checkField(row: JsonObject, key: string, kind: FieldKind, label: string): void {
-  if (!(key in row)) {
-    const snake = snakeCase(key);
-    const hint = snake !== key && snake in row ? ` (found "${snake}"; the contract uses camelCase)` : '';
-    throw new ContractMismatch(`${label}: field "${key}" is missing${hint}`);
-  }
-  if (typeof row[key] !== kind) {
-    throw new ContractMismatch(`${label}: field "${key}" must be a ${kind}, got ${describe(row[key])}`);
-  }
-}
-
-/** Validates a JSON array of rows field by field and returns it typed. */
-function readRows<R>(body: unknown, spec: RowSpec<R>, label = 'row'): R[] {
-  if (!Array.isArray(body)) throw new ContractMismatch(`expected a JSON array of rows, got ${describe(body)}`);
-  body.forEach((row: unknown, i) => {
-    if (!isRecord(row)) throw new ContractMismatch(`${label} ${i}: expected an object, got ${describe(row)}`);
-    for (const [key, kind] of Object.entries(spec) as Array<[string, FieldKind]>) {
-      checkField(row, key, kind, `${label} ${i}`);
-    }
-  });
-  return body as R[];
-}
-
-/** `GET /authors` must be `{ items: AuthorRow[], total: number }` with at least one author to seed from. */
-function readAuthorPage(body: unknown): string[] {
-  if (!isRecord(body)) throw new ContractMismatch(`expected an object { items, total }, got ${describe(body)}`);
-  // The body's keys are appended because a wrapped page ({ data, count }) is the usual cause.
-  if (!Array.isArray(body.items)) {
-    throw new ContractMismatch(`field "items" must be an array of authors, got ${describe(body.items)}; body is ${describe(body)}`);
-  }
-  if (typeof body.total !== 'number') {
-    throw new ContractMismatch(`field "total" must be a number, got ${describe(body.total)}; body is ${describe(body)}`);
-  }
-  const rows = readRows<AuthorRow>(body.items, AUTHOR_FIELDS, 'items');
-  if (rows.length === 0) {
+/** `GET /authors` must match the page contract AND hold at least one author to seed from. */
+function seedAuthorIds(body: unknown): string[] {
+  const { items } = readAuthorPage(body, describeValue);
+  if (items.length === 0) {
     throw new ContractMismatch('no authors were returned (items is empty); the later routes need one to check');
   }
-  return unique(rows.map((row) => row.id));
+  return unique(items.map((row) => row.id));
 }
 
 /** By-id lookups must echo the requested row; a missing one is what surfaces as a false `NOT_FOUND`. */
@@ -168,7 +111,9 @@ function unique(ids: string[]): string[] {
  * every network failure as a bare "fetch failed"; the actionable part
  * (`ECONNREFUSED`, "bad port") is only on the cause.
  */
-function describeError(err: unknown): string {
+function describeError(thrown: unknown): string {
+  // The client already parsed the body; unwrap to the parse error it reports.
+  const err = thrown instanceof DownstreamBadResponse ? thrown.detail : thrown;
   if (err instanceof ContractMismatch) return err.message;
   if (err instanceof SyntaxError) return `response body is not valid JSON (${err.message})`;
   if (!(err instanceof Error)) return String(err);
@@ -207,7 +152,7 @@ export async function checkBackend(baseUrl: string): Promise<CheckReport> {
   const authorIds = await step(
     '/authors',
     () => client.get('/authors', { offset: 0, limit: SEED_LIMIT }),
-    readAuthorPage,
+    seedAuthorIds,
   );
   if (authorIds === undefined) {
     skip('/authors', '/authors/by-ids', '/books/by-author', '/books/by-ids', '/reviews/by-book');

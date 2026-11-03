@@ -70,3 +70,8 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 48 | Bounded nested lists `Author.books(first)` / `Book.reviews(first)`, sliced after the batched fetch (calls unchanged; benchmark-shaped cost 166 → 61) | planned | — |
 | 49 | Relay `interface Node` + `Query.node(id)`/`nodes(ids)` refetch via the batched by-id loaders (global id never a loader key) | planned | — |
 | 50 | Options validated for the gateway's lifetime: snapshot `opts` before validating (post-construction mutation such as `downstreamTimeoutMs = 2**31` re-opens the 1 ms clamp) and reject extra `loaderOptions` keys (`maxBatchSize: 1` there turns 2 calls into 6) | planned | — |
+| 51 | 2xx downstream body that breaks the REST contract (non-JSON, wrong shape, bad row field) → typed `DOWNSTREAM_BAD_RESPONSE` naming the route, via check-backend's shared row reader | done | 73 |
+| 52 | SDL contract importable by name: `exports` gains `./schema.graphql` + `./package.json`; entry re-exports realm-free `typeDefs` (`ERR_PACKAGE_PATH_NOT_EXPORTED` today) | planned | — |
+| 53 | CI enforces the quality bar: `npm run typecheck` step (test/ type errors pass CI today) + `benchmark --threshold`; unknown benchmark flags exit 2 | planned | — |
+| 54 | A 2xx body that stalls after headers maps to `DOWNSTREAM_TIMEOUT` (today `res.text()` sits outside the timeout mapping → "Unexpected error."); pair with row 39's byte cap | planned | — |
+| 55 | A failed `Book.author` lookahead prefetch is reused by the field's own `Author.books` load instead of re-sent (2 calls and 2 budget units today) | planned | — |

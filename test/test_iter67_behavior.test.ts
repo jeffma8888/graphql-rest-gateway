@@ -595,7 +595,9 @@ describe('EB12: the motivating case (author_id instead of authorId)', () => {
     return { ...rest, author_id: authorId };
   });
 
-  it('createGateway today answers 200 with books: [] and no errors (pinned, unchanged)', async () => {
+  // Until iter-73 this pinned the defect (200, books: [], no errors); the gateway now
+  // checks every 2xx body against the same row specs and refuses the snake_case rows.
+  it('createGateway answers 200 with a DOWNSTREAM_BAD_RESPONSE naming /books/by-author and author_id', async () => {
     const f = await fake({ '/books/by-author': snake, '/books/by-ids': snake });
     const gw = createGateway({ restBaseUrl: f.url });
     const res = await gw.fetch('http://gateway.local/graphql', {
@@ -604,9 +606,11 @@ describe('EB12: the motivating case (author_id instead of authorId)', () => {
       body: JSON.stringify({ query: Q }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: any; errors?: unknown };
-    expect(body.errors).toBeUndefined();
-    expect(body.data.authors.edges).toEqual([{ node: { books: [] } }]);
+    const body = (await res.json()) as { data: any; errors?: Array<{ message: string; extensions: any }> };
+    expect(body.errors).toHaveLength(1);
+    const [err] = body.errors ?? [];
+    expect(err?.extensions).toEqual({ code: 'DOWNSTREAM_BAD_RESPONSE', status: 200, route: '/books/by-author' });
+    expect(err?.message).toContain('found "author_id"');
   });
 
   it('checkBackend reports /books/by-author FAIL naming authorId', async () => {

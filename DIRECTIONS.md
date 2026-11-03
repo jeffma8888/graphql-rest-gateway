@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-73
+    lenses: integration-and-adoption
+    - Candidate A1 -- Options validated for the gateway's lifetime: snapshot `opts` at construction and reject unknown `loaderOptions` keys (row 50)
+    - Candidate A2 -- A 2xx downstream body that breaks the REST contract fails as a typed `DOWNSTREAM_BAD_RESPONSE`, checked by the same row reader `check-backend` already uses (optionally widened with row 39's byte cap)
+    - Candidate A3 -- Cursors are canonical or `BAD_CURSOR`: reject `""`, trailing junk, fractions and unsafe integers, and an empty page never claims `hasPreviousPage: true` with `startCursor: null` (row 45, behaviour half)
+    - Candidate B1 -- The SDL contract is importable by name: export `./schema.graphql` (and `./package.json`) in the package `exports` map, plus a realm-free `typeDefs` string from the entry
+    - Candidate B2 -- CI enforces the product's own gates: add `npm run typecheck`, and make "Prove the N+1 fix" actually able to fail (`benchmark --threshold`, unknown benchmark flags rejected with exit 2)
+    - Candidate B3 -- `check-backend` can check an authenticated backend: repeatable `--header 'name: value'`, names validated by the shipped `validateForwardHeaders` (row 42, auth half)
+    winner: A2
+    ship: pending (not yet decided)
   iter-72
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Relay global object identification: `interface Node` + `Query.node(id: ID!)` (and `nodes(ids:)`), with Author and Book refetched through the existing batched by-id loaders
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `close()` stops holding the process open: clear the 5 s drain-bound timer, and make concurrent `close()` calls share one drain (row 30)
     - Candidate B3 -- Request-body byte cap with HTTP 413 before parse (`maxRequestBytes` / `MAX_REQUEST_BYTES`, finite default) (row 35)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 327b9f6
   iter-71
     lenses: narrative-and-docs, new-capability
     - A1 -- The README's Programmatic usage snippet never exits: add `await app.close()` and run the snippet as a doc-test
@@ -391,4 +401,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-39 scouted iterations
+40 scouted iterations
