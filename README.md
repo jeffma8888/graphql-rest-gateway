@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-958%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-998%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -115,6 +115,8 @@ REST_BASE_URL=http://127.0.0.1:4001 npm start
 # limits combine the same way: MAX_COMPLEXITY=500 REST_BASE_URL=http://127.0.0.1:4001 npm start
 ```
 
+> **Probes.** Point the load balancer's liveness check at `GET /healthz` (always `200` while the process serves) and its readiness check at `GET /readyz`, which answers `503` with a typed `code` while `REST_BASE_URL` is unreachable, erroring or off-contract. `npm start` boots even when the backend is down, so `/readyz` is what keeps traffic away until it is up. See [Readiness probe](#readiness-probe).
+
 > **Shutdown.** On SIGTERM/SIGINT, `npm start` stops new work at once: any request that still reaches it gets `503` with `connection: close`, and the port stops accepting connections. In-flight requests drain (bounded at 5 s). Then the remaining sockets, including idle keep-alive ones, are closed and the process exits 0, so a load balancer's reused connections cannot hold shutdown open.
 
 > An external backend must serve the same REST routes as the bundled one (`/authors`, `/authors/by-ids`, `/books/by-author`, `/books/by-ids`, `/reviews/by-book`). The gateway's resolvers are written against that contract. A path prefix in `REST_BASE_URL` is honoured: `REST_BASE_URL=http://127.0.0.1:4001/api/v1` calls `/api/v1/authors`, `/api/v1/books/by-author`, and so on (trailing slashes are ignored). A query string or fragment in `REST_BASE_URL` is rejected at startup.
@@ -160,6 +162,10 @@ const res = await gateway.fetch('http://localhost/graphql', {
 // Health check (short-circuits before GraphQL parsing)
 const health = await gateway.fetch('http://localhost/healthz');
 // -> 200 { "status": "ok" }
+
+// Readiness check: one downstream GET /authors?offset=0&limit=1 (see "Readiness probe" in §7)
+const ready = await gateway.fetch('http://localhost/readyz');
+// -> 200 { "status": "ready" }, or 503 { "status": "unready", "code": "DOWNSTREAM_UNREACHABLE" | ... }
 
 // Graceful shutdown (drains in-flight requests, then resolves)
 await gateway.close();
@@ -307,9 +313,14 @@ Batching clients (Apollo `BatchHttpLink`, Relay batching) send several operation
 A legacy REST service usually authorizes each request itself and correlates logs by request id, so the gateway can pass selected caller headers through: `forwardHeaders: ['authorization', 'x-request-id']` (env `FORWARD_HEADERS=authorization,x-request-id`). Forwarding is opt-in and allowlist-only: nothing is forwarded by default, only the listed names (matched case-insensitively) are copied, and a header the caller did not send is not sent. Values are taken from each edge request, so one caller's token never reaches another caller's downstream calls; every path (batched, naive, list pages, lookahead prefetch) carries them. Forwarded credentials are sent to the configured downstream host (`restBaseUrl` / `REST_BASE_URL`), so only list headers that host is meant to see. Hop-by-hop and framing names (`host`, `connection`, `content-length`, `transfer-encoding`, `keep-alive`, `upgrade`, `te`, `trailer`, `proxy-connection`), `expect` (Node's fetch refuses it, so every downstream call would fail) and names that are not valid HTTP tokens are rejected at startup.
 
 ### Downstream error
+When the downstream REST backend cannot be reached at all (connection refused, DNS failure, connection reset before a response), the field fails with `extensions.code = DOWNSTREAM_UNREACHABLE` and the exact message `Downstream request to <route> failed: backend unreachable`, e.g. `Downstream request to /authors failed: backend unreachable`. The host, port and system error (`ECONNREFUSED`) are not included, because they describe the backend's topology. `npm run check-backend` still reports them to the operator. The call is counted once in `extensions.downstreamCalls`, and other fields of the same query fail or succeed on their own. Like every typed downstream error, it is not written to the server log; use `/readyz` or `npm run check-backend` to see whether the backend is reachable.
+
 When the downstream REST backend returns a non-OK HTTP status (e.g. 500, 404), the gateway surfaces a typed error (`extensions.code = DOWNSTREAM_ERROR`) with `extensions.status` carrying the HTTP status code. The error message includes the status, status text, and the failed path, letting clients distinguish "the backend returned an error" from "the query itself was invalid."
 
 When the downstream answers 2xx but the body is not valid JSON (a maintenance page, an empty body) or breaks the REST contract (not a JSON array of rows, a row that is not an object, a row field missing or of the wrong JSON type, an `/authors` page that is not `{ items, total }`), the field fails with `extensions.code = DOWNSTREAM_BAD_RESPONSE`, `extensions.status` (the downstream HTTP status) and `extensions.route` (e.g. `/authors/by-ids`) instead of an untyped "Unexpected error.". The message names the route and the first problem, e.g. `Downstream REST response for /books/by-ids breaks the contract: row 0: field "year" must be a number, got a string`. The downstream body is never echoed: values and keys are reported only by JSON type. Other fields of the same query keep their data, the call is counted once in `extensions.downstreamCalls` and is not retried, and extra row fields are allowed. One exception to "not retried": when the failing call was a `Book.author` lookahead prefetch, the field's own load re-sends it once (2 calls). The check covers the whole downstream response, so one bad row fails every field served by that batched call, whether or not the bad field was selected. The row specs are the same module `npm run check-backend` checks against, so the pre-flight and the gateway cannot disagree about the contract.
+
+### Readiness probe
+`GET /readyz` tells a load balancer or orchestrator whether this instance can serve, while `/healthz` stays a static liveness check (`200 {"status":"ok"}`, no downstream call) that only says the process is up. Each probe sends one downstream call, `GET /authors?offset=0&limit=1` (the first author page, through the same data source and contract reader the resolvers use), and answers `200 {"status":"ready"}` or `503 {"status":"unready","code":"<code>"}`. The code is one of 4: `DOWNSTREAM_UNREACHABLE` (nothing answered), `DOWNSTREAM_ERROR` (a non-2xx status), `DOWNSTREAM_BAD_RESPONSE` (a 2xx body that is not a valid `{ items, total }` page, e.g. an html maintenance page) and `DOWNSTREAM_TIMEOUT` (no answer within `downstreamTimeoutMs`). These are the same codes GraphQL clients get for the same failure, with one known gap: when a 2xx response arrives and its body then fails or stalls mid-read, the probe reports `DOWNSTREAM_UNREACHABLE` while clients still get an untyped `INTERNAL_SERVER_ERROR` (the probe still reports unready, which is the right routing decision). The path is matched exactly like `/healthz`: any method and any query string, but not `/readyz/x`. Concurrent probes share one in-flight check, so 10 simultaneous probes make 1 downstream call, but the result is never cached: the next probe after it settles checks again, so a backend that recovers is reported ready at once. The probe belongs to no caller. It carries no [forwarded headers](#forwarding-edge-headers-downstream) and is not limited by the [downstream call budget](#downstream-call-budget), so a backend that requires auth on `/authors` reports unready (`DOWNSTREAM_ERROR`). Probe calls are not counted in any request's `extensions.downstreamCalls`. After `close()`, `/readyz` answers 503 like every other path, with no downstream call. While the backend hangs, every probe waits for the shared check, which gives up only after `downstreamTimeoutMs` (default 30 s), so set `downstreamTimeoutMs` below the load balancer's probe timeout if you want `/readyz` to answer with a code before the balancer gives up.
 
 ### Query complexity metrics
 Every successful response includes `extensions.queryComplexity` with numeric `cost` and `depth` fields — the same values the depth and complexity validation rules compute. Integrators can observe real traffic to tune `maxDepth`/`maxComplexity`, alert on creeping cost before clients trip the hard limit, and prove exactly what each query costs. When a query is rejected by the validation rules (`QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`), the `queryComplexity` extension is **not** injected — the rejection error already carries the relevant numbers.
@@ -327,7 +338,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 958 tests across 44 files (Vitest), all green:
+`npm test` — 998 tests across 45 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -340,6 +351,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Backward pagination** (`test_iter71_behavior.test.ts`): `last`/`before` pages, windows from `after` plus `before`, a full backward walk that visits every author once, `first` with `last` refused as `BAD_PAGINATION_ARGS` at 0 calls, clamped and empty pages, and the exact downstream call count of each case.
 - **Options validation** (`test_iter72_behavior.test.ts`): every bad `createGateway` option (NaN/0/Infinity limits, a `downstreamTimeoutMs` above 2147483647, a non-http(s) `restBaseUrl`, a malformed `loaderOptions`, an unknown key with its did-you-mean hint) throws at construction with 0 downstream calls, the CLI rejects `DOWNSTREAM_TIMEOUT_MS` above 2147483647, and the benchmark still costs 3 batched / 21 naive calls.
 - **Contract-breaking 2xx bodies** (`test_iter73_behavior.test.ts`): a stub in front of the bundled backend corrupts one route at a time (an html or empty body, a wrapped list, a null row, a missing, mistyped or snake_case field, a bad `/authors` page) and each becomes `DOWNSTREAM_BAD_RESPONSE` naming the route, with no body text echoed, partial data kept, the call counted once, `DOWNSTREAM_ERROR` unchanged for non-2xx, and the benchmark still at 3 batched / 21 naive calls.
+- **Readiness probe** (`test_iter74_behavior.test.ts`): `/readyz` answers 200 ready against the bundled backend and 503 with a typed code against a closed port, a 500, an html page, an off-contract page and a stalled backend; concurrent probes coalesce into one downstream call, a recovered backend is ready on the next probe, `/healthz` stays static, and connection refused reaches GraphQL clients as `DOWNSTREAM_UNREACHABLE` with no host or port in the message.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

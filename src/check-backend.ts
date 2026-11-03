@@ -9,7 +9,7 @@ import {
   readRows as readContractRows,
   type RowSpec,
 } from './gateway/datasources/contract.js';
-import { DownstreamBadResponse, RestClient } from './gateway/datasources/rest-client.js';
+import { DownstreamBadResponse, DownstreamUnreachable, RestClient } from './gateway/datasources/rest-client.js';
 import type { AuthorRow, BookRow, ReviewRow } from './rest-backend/data.js';
 import { buildBackend } from './rest-backend/server.js';
 
@@ -112,8 +112,9 @@ function unique(ids: string[]): string[] {
  * (`ECONNREFUSED`, "bad port") is only on the cause.
  */
 function describeError(thrown: unknown): string {
-  // The client already parsed the body; unwrap to the parse error it reports.
-  const err = thrown instanceof DownstreamBadResponse ? thrown.detail : thrown;
+  // The client already typed the failure; unwrap to the underlying parse or
+  // fetch error, whose text (incl. `ECONNREFUSED`) is what the operator needs.
+  const err = thrown instanceof DownstreamBadResponse || thrown instanceof DownstreamUnreachable ? thrown.detail : thrown;
   if (err instanceof ContractMismatch) return err.message;
   if (err instanceof SyntaxError) return `response body is not valid JSON (${err.message})`;
   if (!(err instanceof Error)) return String(err);

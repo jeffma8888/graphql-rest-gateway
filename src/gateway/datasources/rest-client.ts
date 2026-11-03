@@ -140,6 +140,40 @@ function readBody<T>(route: string, status: number, text: string, read: (body: u
 
 const parsedJson = (body: unknown): unknown => body;
 
+/**
+ * The downstream could not be reached at all (connection refused, DNS
+ * failure, reset before headers). WHY typed: it used to escape as an untyped
+ * "Unexpected error.", which a client cannot tell from a gateway bug and a
+ * readiness probe cannot name. The message names only the route: the host,
+ * port and errno (`ECONNREFUSED`) describe the backend's topology, which is not
+ * the client's to see. `detail` keeps the original fetch error for operator
+ * tooling (`npm run check-backend`) and is not serialized into responses.
+ */
+export class DownstreamUnreachable extends GraphQLError {
+  constructor(
+    route: string,
+    readonly detail: Error,
+  ) {
+    super(`Downstream request to ${route} failed: backend unreachable`, {
+      extensions: { code: 'DOWNSTREAM_UNREACHABLE' },
+    });
+  }
+}
+
+/**
+ * Types a rejected `fetch`. WHY every non-timeout rejection is "unreachable":
+ * the URL is built (and the base validated) before `fetch`, so what is left is
+ * the transport failing before any response arrived.
+ */
+function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLError {
+  if (err instanceof DOMException && err.name === 'TimeoutError') {
+    return new GraphQLError(`Downstream request to ${path} timed out after ${timeoutMs}ms`, {
+      extensions: { code: 'DOWNSTREAM_TIMEOUT' },
+    });
+  }
+  return new DownstreamUnreachable(path, err instanceof Error ? err : new Error(String(err)));
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -206,12 +240,7 @@ export class RestClient {
     try {
       res = await fetch(url, { headers: this.headers, signal: AbortSignal.timeout(this.timeoutMs) });
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new GraphQLError(`Downstream request to ${path} timed out after ${this.timeoutMs}ms`, {
-          extensions: { code: 'DOWNSTREAM_TIMEOUT' },
-        });
-      }
-      throw err;
+      throw fetchFailure(path, this.timeoutMs, err);
     }
 
     if (!res.ok) {

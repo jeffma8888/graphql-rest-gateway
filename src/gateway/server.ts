@@ -1,8 +1,9 @@
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
-import { getOperationAST, validate, type DocumentNode, type ExecutionResult, type GraphQLError } from 'graphql';
+import { getOperationAST, validate, GraphQLError, type DocumentNode, type ExecutionResult } from 'graphql';
 import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
-import { validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
+import { RestClient, validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
+import { AuthorDataSource } from './datasources/index.js';
 import type { LoaderOptions } from './loaders.js';
 import { depthLimit } from './security/depth-limit.js';
 import {
@@ -107,6 +108,57 @@ function healthzPlugin(): Plugin {
           }),
         );
       }
+    },
+  };
+}
+
+/** A readiness verdict: the HTTP status and JSON body every waiting probe gets. */
+interface Readiness {
+  status: 200 | 503;
+  body: { status: 'ready' } | { status: 'unready'; code: string };
+}
+
+/**
+ * Fetches the first `/authors` page through the same data source (and so the
+ * same contract reader) the resolvers use. WHY a fresh client per check, with
+ * no forwarded headers and no budget: the probe belongs to no caller, so it
+ * must never carry one caller's credential or spend one caller's budget, and
+ * nothing from an earlier check (a counter, a result) may leak into the next.
+ * The code is the typed downstream error's own `extensions.code`, so the probe
+ * and GraphQL clients name the same failure the same way.
+ */
+async function checkReadiness(restBaseUrl: string, timeoutMs: number | undefined): Promise<Readiness> {
+  try {
+    await new AuthorDataSource(new RestClient(restBaseUrl, timeoutMs)).listAuthors(0, 1);
+    return { status: 200, body: { status: 'ready' } };
+  } catch (err: unknown) {
+    const code = err instanceof GraphQLError ? err.extensions.code : undefined;
+    return { status: 503, body: { status: 'unready', code: typeof code === 'string' ? code : 'DOWNSTREAM_UNREACHABLE' } };
+  }
+}
+
+/**
+ * `/readyz`: readiness for a load balancer, next to `/healthz`'s liveness.
+ * WHY concurrent probes share one in-flight check: a fleet of LB probes must
+ * not multiply into downstream load. WHY it is cleared on settle and never
+ * cached: a cached verdict would keep routing to a backend that just died,
+ * or keep refusing one that just recovered.
+ */
+function readyzPlugin(restBaseUrl: string, timeoutMs: number | undefined): Plugin {
+  let inFlight: Promise<Readiness> | null = null;
+  const check = (): Promise<Readiness> => {
+    inFlight ??= checkReadiness(restBaseUrl, timeoutMs).finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  };
+  return {
+    async onRequest({ request, endResponse, fetchAPI }) {
+      if (new URL(request.url).pathname !== '/readyz') return;
+      const { status, body } = await check();
+      endResponse(
+        new fetchAPI.Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+      );
     },
   };
 }
@@ -260,6 +312,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         },
       },
       healthzPlugin(),
+      readyzPlugin(opts.restBaseUrl, opts.downstreamTimeoutMs),
       securityPlugin(maxDepth, maxComplexity),
       queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),

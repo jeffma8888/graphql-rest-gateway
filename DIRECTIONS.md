@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-74
+    lenses: simplification-and-deletion
+    - Candidate A1 -- `GET /readyz`: a readiness probe that checks the downstream, so a load balancer stops sending traffic to a gateway whose REST backend is down or breaks the contract
+    - Candidate A2 -- The typed error-code vocabulary is importable: `GATEWAY_ERROR_CODES` (frozen) + `type GatewayErrorCode` from the package entry, with a README §7 code table guarded against the source
+    - Candidate A3 -- The SDL contract is importable by name: `exports` gains `./schema.graphql` (+ `./package.json`), and the entry re-exports a realm-free `typeDefs` string (row 52)
+    - Candidate B1 -- One admission rule: delete `depth-limit.ts` and the `-1` sentinel protocol, so the cost and depth checks come from one `measureOperation` walk per document
+    - Candidate B2 -- One in-flight tracker: `gateway.close()` reuses the `Set` + `settleWithin` rule that `http-adapter.ts` already ships, deleting the counter + single `drainResolve` slot (and closing row 30)
+    - Candidate B3 -- One positive-integer rule for every numeric `createGateway` option: delete `validateMaxBatchSize` (server.ts) and `validateMaxDownstreamCalls` (rest-client.ts) in favour of options.ts's `assertPositiveInt`
+    winner: A1
+    ship: pending (not yet decided)
   iter-73
     lenses: integration-and-adoption
     - Candidate A1 -- Options validated for the gateway's lifetime: snapshot `opts` at construction and reject unknown `loaderOptions` keys (row 50)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- CI enforces the product's own gates: add `npm run typecheck`, and make "Prove the N+1 fix" actually able to fail (`benchmark --threshold`, unknown benchmark flags rejected with exit 2)
     - Candidate B3 -- `check-backend` can check an authenticated backend: repeatable `--header 'name: value'`, names validated by the shipped `validateForwardHeaders` (row 42, auth half)
     winner: A2
-    ship: pending (not yet decided)
+    ship: PUSHED 1664d6a
   iter-72
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Relay global object identification: `interface Node` + `Query.node(id: ID!)` (and `nodes(ids:)`), with Author and Book refetched through the existing batched by-id loaders
@@ -401,4 +411,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-40 scouted iterations
+41 scouted iterations
