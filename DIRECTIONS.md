@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-72
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Relay global object identification: `interface Node` + `Query.node(id: ID!)` (and `nodes(ids:)`), with Author and Book refetched through the existing batched by-id loaders
+    - Candidate A2 -- Bounded nested lists: `Author.books(first: Int)` and `Book.reviews(first: Int)`, sliced after the batched fetch, so a whole page still costs one downstream call per level and the client's cost becomes truthful
+    - Candidate A3 -- Operator-side downstream call hook: `createGateway({ onDownstreamCall })` receives `{ path, status, durationMs, errorCode, outcome }` for every REST call (row 10, dependency-free first slice)
+    - Candidate B1 -- `createGateway` validates its whole options object at construction: NaN/Infinity/0 limits, a missing or invalid `restBaseUrl`, and unknown keys all throw instead of silently disabling a limit (row 38, widened)
+    - Candidate B2 -- `close()` stops holding the process open: clear the 5 s drain-bound timer, and make concurrent `close()` calls share one drain (row 30)
+    - Candidate B3 -- Request-body byte cap with HTTP 413 before parse (`maxRequestBytes` / `MAX_REQUEST_BYTES`, finite default) (row 35)
+    winner: B1
+    ship: pending (not yet decided)
   iter-71
     lenses: narrative-and-docs, new-capability
     - A1 -- The README's Programmatic usage snippet never exits: add `await app.close()` and run the snippet as a doc-test
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Operator-side downstream call hook: `createGateway({ onDownstreamCall })` gets `{ path, status, durationMs, errorCode, outcome }` for every REST call (row 10, dependency-free first slice)
     - Candidate B3 -- Opt-in cross-request entity cache (`entityCacheTtlMs` / `ENTITY_CACHE_TTL_MS`): a repeat by-id query within the TTL makes 0 downstream calls (row 9)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 72a155e
   iter-70
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- `Book.author` lookahead (roadmap row 31): `book(id){ author{ books } }` starts `/books/by-author` in the same tick as `/authors/by-ids`, so 3 serial hops become 2 at an identical call count
@@ -381,4 +391,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-38 scouted iterations
+39 scouted iterations

@@ -57,7 +57,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
 | 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s) | planned | — |
-| 38 | Numeric library options fail fast (`maxDepth`/`maxComplexity`/`downstreamTimeoutMs` NaN/0/2.5 → `RangeError`) | planned | — |
+| 38 | `createGateway` validates its whole options object: NaN/0/Infinity limits, `downstreamTimeoutMs` > 2^31-1, bad `restBaseUrl`/`loaderOptions` and unknown keys (did-you-mean) throw | done | 72 |
 | 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS) | planned | — |
 | 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
 | 41 | `npm start` opt-in pre-flight (`PREFLIGHT=warn\|fail`) runs check-backend before listening | planned | — |
@@ -67,3 +67,6 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 45 | README pagination truth: out-of-range `after`/`before` cursors return an empty page, not `BAD_CURSOR` (fix sentence + pin it); a past-end `before` must never give `hasPreviousPage: true` with `startCursor: null`; `""` cursors → `BAD_CURSOR` | planned | — |
 | 46 | README Programmatic-usage snippet closes the backend `app` (hangs >30 s today) + doc-test that runs it | planned | — |
 | 47 | Complexity prices the implicit default page size (`authors{…}` with no `first`/`last` costs 34 but fetches 10 rows, like `first: 10` at 331) | planned | — |
+| 48 | Bounded nested lists `Author.books(first)` / `Book.reviews(first)`, sliced after the batched fetch (calls unchanged; benchmark-shaped cost 166 → 61) | planned | — |
+| 49 | Relay `interface Node` + `Query.node(id)`/`nodes(ids)` refetch via the batched by-id loaders (global id never a loader key) | planned | — |
+| 50 | Options validated for the gateway's lifetime: snapshot `opts` before validating (post-construction mutation such as `downstreamTimeoutMs = 2**31` re-opens the 1 ms clamp) and reject extra `loaderOptions` keys (`maxBatchSize: 1` there turns 2 calls into 6) | planned | — |

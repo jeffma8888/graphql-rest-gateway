@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-819%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-927%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -98,7 +98,7 @@ Other entry points:
 | `REST_LATENCY_MS` | non-negative integer, bundled mode only (ignored with `REST_BASE_URL`) | `25` |
 | `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
 | `MAX_COMPLEXITY` | positive integer → `maxComplexity` | `1000` |
-| `DOWNSTREAM_TIMEOUT_MS` | positive integer → `downstreamTimeoutMs` | `30000` |
+| `DOWNSTREAM_TIMEOUT_MS` | positive integer ≤ 2147483647 → `downstreamTimeoutMs` | `30000` |
 | `MAX_DOWNSTREAM_CALLS` | positive integer → `maxDownstreamCalls` | unset → unlimited |
 | `FORWARD_HEADERS` | comma-separated header names → `forwardHeaders` (whitespace trimmed, empty entries ignored) | unset → forward nothing |
 | `MAX_BATCH_SIZE` | positive integer → `maxBatchSize` | unset → batching off |
@@ -171,14 +171,16 @@ await gateway.close();
 
 | Property | Type | Default | Description |
 | --- | --- | --- | --- |
-| `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend; a path prefix such as `/api/v1` is kept; a query string or fragment is ignored |
-| `maxDepth` | `number` | `10` | Maximum allowed query nesting depth |
-| `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out) |
-| `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode; pass `BATCHED` or `NAIVE` (both frozen, importable from the package entry) |
-| `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) |
+| `restBaseUrl` | `string` | *(required)* | Base URL of the downstream REST backend (absolute http(s) URL, else `TypeError`); a path prefix such as `/api/v1` is kept; a query string or fragment is ignored |
+| `maxDepth` | `number` | `10` | Maximum allowed query nesting depth (positive integer, else `RangeError`) |
+| `maxComplexity` | `number` | `1000` | Maximum allowed query cost (field-count × fan-out); positive integer, else `RangeError` |
+| `loaderOptions` | `LoaderOptions` | `BATCHED` | DataLoader batching/caching mode; pass `BATCHED` or `NAIVE` (both frozen, importable from the package entry); `{ batch: boolean, cache: boolean }`, else `TypeError` |
+| `downstreamTimeoutMs` | `number` | `30000` | Per-call timeout for downstream REST requests (ms) (positive integer, maximum 2147483647, else `RangeError`) |
 | `maxDownstreamCalls` | `number` | unlimited | Per-request cap on downstream REST calls sent; a call past it fails with `DOWNSTREAM_BUDGET_EXCEEDED` (positive integer, else `RangeError`) |
 | `forwardHeaders` | `readonly string[]` | `[]` (none) | Edge request headers (case-insensitive) copied onto every downstream REST call of the same request, e.g. `['authorization', 'x-request-id']`; invalid or hop-by-hop names throw |
 | `maxBatchSize` | `number` | unset → batching off | Opt-in request batching: a POST whose JSON body is an array of up to this many operations is served as one batch sharing one loader set and one `maxDownstreamCalls` budget; a larger batch gets HTTP 413 (positive integer, else `RangeError`) |
+
+`createGateway` validates the whole object synchronously, before anything is built: an unknown key throws `TypeError` with a did-you-mean hint (`maxComplexty` → `maxComplexity`), even when its value is `undefined`, and an explicit `undefined` value means omitted. Limits are unlimited only by omission (`maxDownstreamCalls`) or default (`maxDepth` 10, `maxComplexity` 1000); `NaN`/`Infinity` are rejected.
 
 **`BackendOptions`** — passed to `buildBackend(opts)`:
 
@@ -323,7 +325,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 819 tests across 42 files (Vitest), all green:
+`npm test` — 927 tests across 43 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -334,6 +336,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **List-page dedupe** (`test_iter69_behavior.test.ts`): batches of identical `authors` list ops and same-page aliases cost one `/authors` call per distinct page per edge request, a failing page is called once with its error shared, the `maxDownstreamCalls` budget sees deduped calls, and NAIVE mode still pays every call.
 - **`Book.author` lookahead** (`test_iter70_behavior.test.ts`): `book(id){ author{ books } }` takes 2 serial hops instead of 3 at unchanged call counts and identical data, the gate off-cases (list roots, fragments, `__typename`, `@skip`, NAIVE), the orphan-book +1 call, the budget-2 error path, and mixed HTTP batches.
 - **Backward pagination** (`test_iter71_behavior.test.ts`): `last`/`before` pages, windows from `after` plus `before`, a full backward walk that visits every author once, `first` with `last` refused as `BAD_PAGINATION_ARGS` at 0 calls, clamped and empty pages, and the exact downstream call count of each case.
+- **Options validation** (`test_iter72_behavior.test.ts`): every bad `createGateway` option (NaN/0/Infinity limits, a `downstreamTimeoutMs` above 2147483647, a non-http(s) `restBaseUrl`, a malformed `loaderOptions`, an unknown key with its did-you-mean hint) throws at construction with 0 downstream calls, the CLI rejects `DOWNSTREAM_TIMEOUT_MS` above 2147483647, and the benchmark still costs 3 batched / 21 naive calls.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

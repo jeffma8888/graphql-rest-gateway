@@ -13,6 +13,7 @@ import {
 } from './security/complexity.js';
 import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
 import { parseWithTokenLimit } from './security/token-limit.js';
+import { validateGatewayOptions } from './options.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -214,6 +215,7 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
 }
 
 export function createGateway(opts: GatewayOptions): GatewayServer {
+  validateGatewayOptions(opts);
   validateMaxDownstreamCalls(opts.maxDownstreamCalls);
   const forwardHeaders = validateForwardHeaders(opts.forwardHeaders);
   validateMaxBatchSize(opts.maxBatchSize);

@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildBackend } from './rest-backend/server.js';
 import { createGateway, type GatewayOptions } from './gateway/server.js';
 import { validateForwardHeaders } from './gateway/datasources/rest-client.js';
+import { MAX_TIMEOUT_MS } from './gateway/options.js';
 import { createDrainAwareListener } from './http-adapter.js';
 
 /**
@@ -40,13 +41,14 @@ function isUnset(raw: string | undefined): raw is undefined | '' {
  * `'1.5'` or `'10abc'`, which is exactly the silent misconfiguration a
  * fail-fast CLI exists to prevent.
  */
-function readInt(name: string, raw: string | undefined, min: 0 | 1): number | undefined {
+function readInt(name: string, raw: string | undefined, min: 0 | 1, max?: number): number | undefined {
   if (isUnset(raw)) return undefined;
   const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
   if (!Number.isSafeInteger(value) || value < min) {
     const kind = min === 0 ? 'a non-negative' : 'a positive';
     throw new Error(`${name} must be ${kind} decimal integer, got ${JSON.stringify(raw)}`);
   }
+  if (max !== undefined && value > max) throw new Error(`${name} must be <= ${max}, got ${JSON.stringify(raw)}`);
   return value;
 }
 
@@ -110,7 +112,7 @@ function parseEnv(env: Env): CliConfig {
     limits: {
       maxDepth: readInt('MAX_DEPTH', env.MAX_DEPTH, 1),
       maxComplexity: readInt('MAX_COMPLEXITY', env.MAX_COMPLEXITY, 1),
-      downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1),
+      downstreamTimeoutMs: readInt('DOWNSTREAM_TIMEOUT_MS', env.DOWNSTREAM_TIMEOUT_MS, 1, MAX_TIMEOUT_MS),
       maxDownstreamCalls: readInt('MAX_DOWNSTREAM_CALLS', env.MAX_DOWNSTREAM_CALLS, 1),
       forwardHeaders: readForwardHeaders(env.FORWARD_HEADERS),
       maxBatchSize: readInt('MAX_BATCH_SIZE', env.MAX_BATCH_SIZE, 1),
