@@ -83,7 +83,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 61 | `/healthz` and `/readyz` send `cache-control: no-store`, so a caching intermediary cannot replay a stale ready verdict | planned | — |
 | 62 | Root fragments (named/inline) and root `__typename` keep the by-id lookahead (3 hops → 2, calls unchanged); a hidden list root still refuses | done | 76 |
 | 63 | `check-backend` sends its 5 probes through the gateway's own data sources (a renamed param today: check 5/5 PASS, gateway `books: []`) | planned | — |
-| 64 | List root whose subtree never reaches the prefetched loader keeps lookahead (`author(id){books}` + `authors{totalCount}`: 3 hops → 2) | planned | — |
+| 64 | List root whose subtree never selects `books`/`reviews` keeps lookahead (`author(id){books{reviews}}` + `authors{totalCount}`: 3 hops → 2, 169 → 113 ms, calls unchanged) | done | 81 |
 | 65 | Opt-in in-flight coalescing of identical downstream GETs across concurrent requests, keyed by URL + forwarded headers (C=50: 100 → 2 calls); off under NAIVE | planned | — |
 | 66 | Compress GraphQL responses when the client accepts it (10-author page 2002 → 359 B); opt-out flag, size threshold, BREACH note | planned | — |
 | 67 | Lookahead gate computed once per operation: memoise `rootsArePrefetchSafe` (re-walks the whole root selection set on every by-id root and every `Book.author` resolve today) | planned | — |

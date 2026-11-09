@@ -287,12 +287,13 @@ describe('EB7 - a list root hidden in a root fragment still refuses', () => {
     expect(stats.byRoute).toEqual(R_LIST);
     expect(hop('EB7_HIDDEN')).toBeGreaterThanOrEqual(HOP_MS);
   });
-  it('A ... on Query { authors{ totalCount } }: 4 calls, 3 hops', async () => {
+  // iter-81 re-pin: a count-only list root never reaches books/reviews, so it keeps the prefetch (2 hops).
+  it('A ... on Query { authors{ totalCount } }: 4 calls, 2 hops (iter-81)', async () => {
     const { body, stats } = await measured(gw, EB7_INLINE_COUNT);
     expect(body.errors).toBeUndefined();
     expect(stats.total).toBe(4);
     expect(Object.keys(stats.byRoute).sort()).toEqual(['/authors', '/authors/by-ids', '/books/by-author', '/reviews/by-book']);
-    expect(hop('EB7_INLINE_COUNT')).toBeGreaterThanOrEqual(HOP_MS);
+    expect(hop('EB7_INLINE_COUNT')).toBeLessThan(HOP_MS);
   });
   it('iter-58 EB8 query { ...R } keeps its 4 calls', async () => {
     const { body, stats } = await measured(gw, ITER58_EB8);

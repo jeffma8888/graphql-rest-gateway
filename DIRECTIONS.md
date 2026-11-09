@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-81
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- One probe responder: `/healthz` and `/readyz` served by one plugin from one route table and one JSON-response builder (delete `healthzPlugin`)
+    - Candidate A2 -- One execute-phase extensions writer: fold `downstreamCallsPlugin` into `queryComplexityPlugin`'s `onExecuteDone`, so each operation's result is rebuilt once instead of twice
+    - Candidate A3 -- `check-backend` goes through the gateway's own data sources instead of re-spelling the 5 REST routes and their query-param names
+    - Candidate B1 -- A list root whose subtree never reaches the prefetched loader keeps the lookahead: "detail + count" screens drop from 3 serial hops to 2 at the same call count (row 64)
+    - Candidate B2 -- Batch-wide lookahead gate: a mixed opt-in HTTP batch stops paying +1 downstream call over the merged operation, at unchanged wall time (row 44)
+    - Candidate B3 -- The lookahead gate is computed once per operation, not once per by-id root and per `Book.author` resolve (row 67): about −25% wall on wide by-id dashboards, unchanged below 15 roots
+    winner: B1
+    ship: pending (not yet decided)
   iter-80
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- The published package can run what the README tells operators to run: `bin` entries for the gateway and `check-backend` (`npx graphql-rest-gateway`, `npx graphql-rest-gateway-check-backend`)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One positive-integer rule for every numeric `createGateway` option: delete `validateMaxBatchSize` (server.ts:74) and `validateMaxDownstreamCalls` (rest-client.ts:47) in favour of options.ts's `assertPositiveInt`
     - Candidate B3 -- Replace the scattered "`n-plus-1.test.ts` unmodified vs git HEAD" guards with ONE content guard, so the suite runs outside a git checkout
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 1a83b9d
   iter-79
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Admission prices the clamped page size: `first`/`last` count as `min(n, 100)` for `authors`, `books` and `reviews`, so a query is never refused for rows the gateway would never fetch (row 74)
@@ -471,4 +481,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-47 scouted iterations
+48 scouted iterations
