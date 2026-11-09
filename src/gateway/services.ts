@@ -3,6 +3,7 @@ import type { AuthorBooksArgs, BookReviewsArgs } from '../generated/graphql.js';
 import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
 import type { AuthorPage, DataSources } from './datasources/index.js';
 import type { Loaders } from './loaders.js';
+import { MAX_PAGE_SIZE } from './pagination/page-size.js';
 import { buildConnection, decodeCursor, offsetFromCursor, type Connection } from './pagination/relay.js';
 
 /**
@@ -12,7 +13,6 @@ import { buildConnection, decodeCursor, offsetFromCursor, type Connection } from
  * queries). No HTTP or fetch logic lives above this line.
  */
 
-const MAX_PAGE_SIZE = 100;
 /** Applied in the service, not as an SDL default, so `last` alone is not read as `first` + `last`. */
 const DEFAULT_PAGE_SIZE = 10;
 

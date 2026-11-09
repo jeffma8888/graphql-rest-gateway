@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-79
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- Admission prices the clamped page size: `first`/`last` count as `min(n, 100)` for `authors`, `books` and `reviews`, so a query is never refused for rows the gateway would never fetch (row 74)
+    - Candidate A2 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE`, not "Unexpected error." (row 54, behaviour half; no byte cap)
+    - Candidate A3 -- `close()` lets the process exit as soon as the drain finishes, and concurrent `close()` calls share one drain (row 30, behaviour half)
+    - Candidate B1 -- `npm start` consults the shipped `onDownstreamCall` hook: `LOG_DOWNSTREAM_CALLS=json` writes one JSON line per downstream REST call
+    - Candidate B2 -- `npm start` opt-in boot pre-flight `PREFLIGHT=warn|fail` that runs the shipped `checkBackend` before listening (row 41)
+    - Candidate B3 -- `/readyz` works against an authenticated backend: an opt-in, operator-owned readiness credential (`readinessHeaders` / `READYZ_HEADERS`), and the 503 body names the downstream status (row 57)
+    winner: A1
+    ship: pending (not yet decided)
   iter-78
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Bounded nested lists: `Author.books(first: Int)` / `Book.reviews(first: Int)`, sliced after the batched fetch (row 48)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE`, not "Unexpected error." (row 54, behaviour half; no byte cap)
     - Candidate B3 -- Request-body byte cap: HTTP 413 before the body is parsed (`maxRequestBytes`, finite default) (row 35)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED dc1322e
   iter-77
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §7 says a failing `Book.author` prefetch is "re-sent once (2 calls)"; it is sent exactly once and always has been. Fix that sentence and the stale §8 lookahead off-case list, and close row 55
@@ -451,4 +461,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-45 scouted iterations
+46 scouted iterations

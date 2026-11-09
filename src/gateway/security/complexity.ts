@@ -18,17 +18,20 @@ import type {
   FieldNode,
   OperationDefinitionNode,
 } from 'graphql';
+import { MAX_PAGE_SIZE } from '../pagination/page-size.js';
 import { getValidationResult, setValidationResult, buildFragmentMap } from './validation-cache.js';
 
 /**
  * Query complexity (cost) validation rule.
  *
- * Depth alone doesn't catch a shallow-but-wide query (`authors(first: 10000)`).
- * This estimates a static worst-case node count: each field costs 1, and a
- * list-returning field multiplies its subtree by an estimated fan-out --
- * `first`/`last` when present, else `defaultListSize`. Relay wrappers
- * (`edges`, `nodes`, `pageInfo`) get a multiplier of 1 because they're already
- * bounded by the parent connection's `first`, which avoids double-counting.
+ * Depth alone doesn't catch a shallow-but-wide query (`authors(first: 100)`
+ * over nested `books { reviews }`). This estimates a static worst-case node
+ * count: each field costs 1, and a list-returning field multiplies its subtree
+ * by an estimated fan-out -- `first`/`last` clamped to 0..MAX_PAGE_SIZE (the
+ * same clamp the resolvers apply, so nothing is priced that is never fetched)
+ * when present, else `defaultListSize`. Relay wrappers (`edges`, `nodes`,
+ * `pageInfo`) get a multiplier of 1 because they're already bounded by the
+ * parent connection's `first`, which avoids double-counting.
  *
  * It's a conservative upper bound, not an exact runtime cost -- which is
  * exactly what you want for an admission-control limit.
@@ -51,9 +54,12 @@ function isListDeep(type: GraphQLType): boolean {
 export type VariableResolver = (name: string) => number | undefined;
 
 /**
- * Reads an integer fan-out argument. Clamped at 0 so a negative `first`
- * (literal or variable) can never drive the summed cost negative -- otherwise
- * one `first: -1000` alias would "pay for" an arbitrarily expensive sibling.
+ * Reads an integer fan-out argument, clamped to `[0, MAX_PAGE_SIZE]` for
+ * literals and variables alike. The floor stops a negative `first` from
+ * driving the summed cost negative -- otherwise one `first: -1000` alias would
+ * "pay for" an arbitrarily expensive sibling. The ceiling matches the
+ * resolvers' clamp: `books(first: 1000)` fetches at most 100 rows, so pricing
+ * the literal would refuse queries for work the gateway never does.
  */
 function intArg(field: FieldNode, name: string, cc: CostContext): number | undefined {
   const value = field.arguments?.find((a) => a.name.value === name)?.value;
@@ -64,7 +70,7 @@ function intArg(field: FieldNode, name: string, cc: CostContext): number | undef
     cc.usesVariables = true;
     n = cc.resolveVariable?.(value.name.value);
   }
-  return n === undefined ? undefined : Math.max(0, n);
+  return n === undefined ? undefined : Math.min(Math.max(0, n), MAX_PAGE_SIZE);
 }
 
 interface CostContext {
