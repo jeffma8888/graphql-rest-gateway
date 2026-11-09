@@ -39,28 +39,42 @@ function isIncluded(
 const BY_ID_ROOTS = new Set(['author', 'book']);
 
 /**
- * True when every root selection is a by-id root FIELD node (`author(id)`,
- * `book(id)`, aliases included). graphql-js calls all Query root resolvers in
- * the same tick, so those roots' prefetches coalesce into one batch per loader.
- * Any other root -- a list root, a root `__typename`, or a root-level fragment,
- * which may hide either -- could reach the same loader a hop later; an early
- * dispatch would split that batch and cost an extra downstream call, so such
- * operations never prefetch. Only `query` operations qualify: mutation roots
- * execute serially, so the same-tick argument would not hold for them.
+ * True when every root field the operation will execute is a by-id root
+ * (`author(id)`, `book(id)`, aliases included) or `__typename`. Root inline and
+ * named fragments are flattened (cycle-guarded) and nodes excluded by
+ * `@skip`/`@include` are ignored, because graphql-js `collectFields` merges them
+ * into one field map and calls every Query root resolver in the same tick --
+ * the same-tick argument rests on that flattened list, not on the spelling.
+ * `__typename` runs no resolver or loader, so it cannot split a batch. Any
+ * other root -- a list root such as `authors` (even hidden in a root
+ * fragment), an introspection root, or an unknown fragment -- could reach the
+ * same loader a hop later; an early dispatch would split that batch and cost an
+ * extra downstream call, so such operations never prefetch. Only `query`
+ * operations qualify: mutation roots execute serially, so the same-tick
+ * argument would not hold for them.
  */
 function rootsArePrefetchSafe(info: GraphQLResolveInfo): boolean {
   if (info.operation.operation !== 'query') return false;
-  return info.operation.selectionSet.selections.every(
-    (sel) => sel.kind === Kind.FIELD && BY_ID_ROOTS.has(sel.name.value),
-  );
+  const seen = new Set<string>();
+  const safe = (set: SelectionSetNode): boolean =>
+    set.selections.every((sel) => {
+      if (!isIncluded(sel, info.variableValues)) return true;
+      if (sel.kind === Kind.FIELD) return sel.name.value === '__typename' || BY_ID_ROOTS.has(sel.name.value);
+      if (sel.kind === Kind.INLINE_FRAGMENT) return safe(sel.selectionSet);
+      if (seen.has(sel.name.value)) return true;
+      seen.add(sel.name.value);
+      const fragment = info.fragments[sel.name.value];
+      return fragment !== undefined && safe(fragment.selectionSet);
+    });
+  return safe(info.operation.selectionSet);
 }
 
 /**
  * True when `childName` is selected (and not skipped) directly under the
  * current field, looking through inline and named fragments (cycle-guarded),
- * and every root selection of the operation is a by-id root field. `some` over
- * `fieldNodes` covers a merged same-alias pair, where only one copy may select
- * the child.
+ * and every executed root field of the operation is a by-id root or
+ * `__typename`. `some` over `fieldNodes` covers a merged same-alias pair, where
+ * only one copy may select the child.
  */
 export function willResolveChild(info: GraphQLResolveInfo, childName: string): boolean {
   if (!rootsArePrefetchSafe(info)) return false;

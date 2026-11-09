@@ -1,6 +1,26 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-76
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Re-land iter-75's root-fragment / root `__typename` lookahead (3 serial hops → 2, same call count); it lost only to a reviewer auth outage
+    - Candidate A2 -- Opt-in in-flight coalescing of identical downstream GETs across concurrent edge requests (thundering herd: 100 → 2 calls at 50 concurrent)
+    - Candidate A3 -- Compress GraphQL responses when the client accepts it (10-author page: 2002 → 359 bytes on the wire, −82%)
+    - Candidate B1 -- The README's Programmatic usage snippet never exits: add `await app.close()` and run the snippet as a doc-test
+    - Candidate B2 -- Two §7 failure-contract sentences are false at HEAD: out-of-range cursors and body-stall timeouts. Rewrite them to the measured behaviour and pin each with a behaviour test
+    - Candidate B3 -- The suite pins two false figures as literals (coverage ~84/86/89 % vs 95.3/96.3/96.6 %; "sample query costs 351" vs 501/356). Re-derive both and replace the literal pins with live checks
+    winner: A1
+    ship: pending (not yet decided)
+  iter-75
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- `check-backend` calls the gateway's own data sources instead of re-spelling the 5 routes and their query params, so a green check is about the requests the gateway actually sends
+    - Candidate A2 -- One in-flight tracker: `gateway.close()` reuses http-adapter's `Set` + `settleWithin`, deleting the counter + single `drainResolve` slot (row 30)
+    - Candidate A3 -- One probe-route responder: `/healthz` and `/readyz` served from one route table with one JSON-response builder (delete `healthzPlugin`)
+    - Candidate B1 -- Root fragments and root `__typename` keep the lookahead: same operation, 3 serial hops → 2 at the same call count
+    - Candidate B2 -- A list root that never reaches the prefetched loader no longer turns lookahead off ("current item + count" dashboards)
+    - Candidate B3 -- Mixed opt-in HTTP batch costs +1 downstream call versus the merged operation (roadmap row 44)
+    winner: B1
+    ship: unknown
   iter-74
     lenses: simplification-and-deletion
     - Candidate A1 -- `GET /readyz`: a readiness probe that checks the downstream, so a load balancer stops sending traffic to a gateway whose REST backend is down or breaks the contract
@@ -10,7 +30,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One in-flight tracker: `gateway.close()` reuses the `Set` + `settleWithin` rule that `http-adapter.ts` already ships, deleting the counter + single `drainResolve` slot (and closing row 30)
     - Candidate B3 -- One positive-integer rule for every numeric `createGateway` option: delete `validateMaxBatchSize` (server.ts) and `validateMaxDownstreamCalls` (rest-client.ts) in favour of options.ts's `assertPositiveInt`
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 92c797f
   iter-73
     lenses: integration-and-adoption
     - Candidate A1 -- Options validated for the gateway's lifetime: snapshot `opts` at construction and reject unknown `loaderOptions` keys (row 50)
@@ -411,4 +431,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-41 scouted iterations
+43 scouted iterations

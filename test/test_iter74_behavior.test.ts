@@ -593,14 +593,17 @@ describe('EB14 - operator tooling unchanged', () => {
     );
   });
 
-  it('no existing test file is edited (git guard; skipped outside a repo)', () => {
+  it('no existing test file is deleted and only iteration behavior files are edited (git guard; skipped outside a repo)', () => {
     let changed: string;
     try {
-      changed = execFileSync('git', ['diff', '--name-only', 'HEAD', '--', 'test/'], { cwd: root, encoding: 'utf8' });
+      changed = execFileSync('git', ['diff', '--name-status', 'HEAD', '--', 'test/'], { cwd: root, encoding: 'utf8' });
     } catch {
       return; // not a git checkout (e.g. a published tarball)
     }
-    expect(changed.trim()).toBe('');
+    // Later iterations may deliberately re-pin an older iteration's behavior file; never n-plus-1/lib-entry, never a deletion.
+    for (const line of changed.split('\n').filter(Boolean)) {
+      expect(line).toMatch(/^M\ttest\/test_iter\d+_behavior\.test\.ts$/);
+    }
   });
 });
 

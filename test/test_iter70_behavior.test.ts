@@ -208,19 +208,19 @@ describe('EB3 - call-count table equals HEAD', () => {
 });
 
 // ---------- EB4 ----------
-describe('EB4 - conservative gate unchanged', () => {
+describe('EB4 - gate flattens root fragments and __typename (iter-76 re-land of iter-75), list roots still refuse', () => {
   const ROOT_FRAG = 'query { ...R } fragment R on Query { book(id:"a1-b1"){ author{ books{ id } } } }';
   const ROOT_TYPENAME = '{ __typename book(id:"a1-b1"){ author{ books{ id } } } }';
   for (const [name, q] of [
     ['root named fragment', ROOT_FRAG],
     ['root __typename', ROOT_TYPENAME],
   ] as const) {
-    it(`${name}: 3 calls and median >= 145 ms (3 hops)`, async () => {
+    it(`${name}: 3 calls and median < 145 ms (2 hops, iter-76 flattening)`, async () => {
       const { body, stats } = await measured(gw, base, q);
       expect(body.errors).toBeUndefined();
       expect(stats.total).toBe(3);
       expect(stats.byRoute).toEqual({ '/books/by-ids': 1, '/authors/by-ids': 1, '/books/by-author': 1 });
-      expect(await medianMs(slow, q)).toBeGreaterThanOrEqual(145);
+      expect(await medianMs(slow, q)).toBeLessThan(145);
     });
   }
 
@@ -471,7 +471,7 @@ describe('EB10 - docs', () => {
     expect(line.trimEnd().endsWith('one field -> one service call')).toBe(false);
   });
 
-  it('every sentence of the HEAD lookahead paragraph is kept', () => {
+  it('every sentence of the HEAD lookahead paragraph is kept (bar the iter-76-retired fragment/__typename refusal)', () => {
     let headReadme: string;
     try {
       headReadme = execFileSync('git', ['show', 'HEAD:README.md'], { cwd: root, encoding: 'utf8' });
@@ -480,7 +480,9 @@ describe('EB10 - docs', () => {
     }
     const before = paragraph(headReadme);
     const now = paragraph(README);
-    for (const s of before.split(/(?<=\.)\s+(?=[A-Z`*])/)) expect(now).toContain(s);
+    // iter-76 (re-land of iter-75) deliberately retired the sentence saying a root-level fragment or root __typename disables the prefetch.
+    const kept = before.split(/(?<=\.)\s+(?=[A-Z`*])/).filter((s) => !s.includes('a root-level fragment (named or inline)'));
+    for (const s of kept) expect(now).toContain(s);
   });
 });
 
