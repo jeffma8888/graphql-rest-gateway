@@ -29,7 +29,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 7 | Machine-readable benchmark output (--json, CI exit code) | done | 38 |
 | 8 | GraphQL config file (.graphqlrc.yml) for editor/codegen discovery | done | 26 |
 | 9 | Response caching layer (per-request + optional shared TTL cache) | planned | — |
-| 10 | OpenTelemetry tracing spans per resolver and downstream call | planned | — |
+| 10 | OpenTelemetry tracing spans per resolver and downstream call (seam: row 71 `onDownstreamCall`) | planned | — |
 | 11 | Extension-code README drift guard + doc backfill | done | 34 |
 | 12 | Scope-based field authorization (pii scope on Review.reviewer) | done | 35 |
 | 13 | Typed DOWNSTREAM_ERROR for non-OK HTTP responses | done | 36 |
@@ -68,13 +68,13 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 46 | README Programmatic-usage snippet closes the backend `app` (hangs >30 s today) + doc-test that runs it | planned | — |
 | 47 | Complexity prices the implicit default page size (`authors{…}` with no `first`/`last` costs 34 but fetches 10 rows, like `first: 10` at 331) | planned | — |
 | 48 | Bounded nested lists `Author.books(first)` / `Book.reviews(first)`, sliced after the batched fetch (calls unchanged; benchmark-shaped cost 166 → 61) | planned | — |
-| 49 | Relay `interface Node` + `Query.node(id)`/`nodes(ids)` refetch via the batched by-id loaders (global id never a loader key) | planned | — |
+| 49 | Relay `interface Node` + `Query.node(id)`/`nodes(ids)` refetch via the batched by-id loaders (global id never a loader key). Decide first: raw `id` vs global id (Relay normalises on `Node.id`; changing it breaks `author(id:)` round-trips); cap + price `nodes(ids)` by length | planned | — |
 | 50 | Options validated for the gateway's lifetime: snapshot `opts` before validating (post-construction mutation such as `downstreamTimeoutMs = 2**31` re-opens the 1 ms clamp) and reject extra `loaderOptions` keys (`maxBatchSize: 1` there turns 2 calls into 6). `/readyz` and `contextFor` must read the same snapshot (iter-74: mutating `restBaseUrl` after boot leaves `/readyz` 200 while every query fails) | planned | — |
 | 51 | 2xx downstream body that breaks the REST contract (non-JSON, wrong shape, bad row field) → typed `DOWNSTREAM_BAD_RESPONSE` naming the route, via check-backend's shared row reader | done | 73 |
 | 52 | SDL contract importable by name: `exports` gains `./schema.graphql` + `./package.json`; entry re-exports realm-free `typeDefs` (`ERR_PACKAGE_PATH_NOT_EXPORTED` today) | planned | — |
 | 53 | CI enforces the quality bar: `npm run typecheck` step (test/ type errors pass CI today) + `benchmark --threshold`; unknown benchmark flags exit 2 | planned | — |
 | 54 | A 2xx body that stalls after headers maps to `DOWNSTREAM_TIMEOUT` (today `res.text()` sits outside the timeout mapping → "Unexpected error."); pair with row 39's byte cap. Also map a mid-body reset to `DOWNSTREAM_UNREACHABLE` so `/readyz` and clients agree by construction (iter-74: probe says UNREACHABLE, clients get INTERNAL_SERVER_ERROR). README §7 "every outbound call is guarded" contradicts its own readiness section until then | planned | — |
-| 55 | A failed `Book.author` lookahead prefetch is reused by the field's own `Author.books` load instead of re-sent (2 calls and 2 budget units today). iter-75/76 scouts: NOT reproduced (route hit 1×); re-verify, else fix README §7 | planned | — |
+| 55 | A failed `Book.author` lookahead prefetch is reused by the field's own `Author.books` load instead of re-sent (2 calls and 2 budget units today). iter-75/76/77 scouts: NOT reproduced (1 hit in 3 failure modes × 4 shapes, false since 1664d6a): fix README §7 sentence + §8 iter-70 off-case list | planned | — |
 | 56 | `GET /readyz` readiness probe: one coalesced `/authors?offset=0&limit=1` contract check → 200 ready / 503 typed code; connection refused → typed `DOWNSTREAM_UNREACHABLE` for clients too | done | 74 |
 | 57 | `/readyz` against an auth-required backend (opt-in probe credential/header; the probe forwards nothing today, so a 401 backend reports unready) | planned | — |
 | 58 | Error-code vocabulary importable: frozen `GATEWAY_ERROR_CODES` + `type GatewayErrorCode` from the entry, README §7 code table guarded against source | planned | — |
@@ -90,3 +90,6 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 68 | Response keys follow query field order, not resolver completion order (`{ author book }` returns `book,author` 19/20 times at iter-76 HEAD) + a pinning test | planned | — |
 | 69 | Complexity/depth skip selections excluded by `@skip`/`@include` (`{ A ...L @skip(if:true) }` costs 55/5 vs 38/4 for `{ A }`, so a skipped fragment can trip admission) | planned | — |
 | 70 | Test hygiene: merge the README lookahead's two adjacent opposite-polarity `@skip`/`@include` sentences (test_iter70 EB10 pins every HEAD sentence, so that guard must be loosened too); test_iter74 EB14 also accepts `A test/test_iterNN_behavior.test.ts` (a staged new tester file turns it red today) | planned | — |
+| 71 | Operator hook `createGateway({ onDownstreamCall })`: one `{ route, status, durationMs, outcome, errorCode }` event per sent downstream call (== `downstreamCalls.total` once all calls settle; never for budget-refused or `/readyz`), throws swallowed | done | 77 |
+| 72 | `onDownstreamCall` events carry per-request correlation (operation name / opt-in request-id header) without leaking forwarded credentials | planned | — |
+| 73 | `extensions.downstreamCalls.total` counts calls sent after the response went out (iter-77 REV: NAIVE `authors{books{reviews}}` with `/reviews/by-book` failing reports total 9-21 against 21 real sends; graphql-js finishes the list on the first null error while sibling loads are still being sent). Also hook hygiene: duck-type the returned thenable in `emit` (not `instanceof Promise`), narrow `classify`'s double `typeof code` check | planned | — |

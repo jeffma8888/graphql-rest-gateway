@@ -174,6 +174,67 @@ function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLErr
   return new DownstreamUnreachable(path, err instanceof Error ? err : new Error(String(err)));
 }
 
+/**
+ * How one sent downstream call ended. The four typed failures map 1:1 onto the
+ * `extensions.code` a client sees; `other` covers anything untyped (e.g. a body
+ * that stalls or resets after a 2xx status line).
+ */
+export type DownstreamCallOutcome = 'ok' | 'http_error' | 'bad_response' | 'unreachable' | 'timeout' | 'other';
+
+/**
+ * One settled downstream REST call, as reported to `onDownstreamCall`. WHY so
+ * few fields: the event is operator-side, but it must still carry no URL, id,
+ * host, header or query param, so a hook that ships it to a log or metrics
+ * backend can never leak a caller's credential or row data. `route` is the
+ * route template (`/books/by-author`), never the base URL's path prefix.
+ */
+export interface DownstreamCallEvent {
+  route: string;
+  /** HTTP status that arrived, or `null` when no response did (unreachable, timeout). */
+  status: number | null;
+  durationMs: number;
+  outcome: DownstreamCallOutcome;
+  /** The client-visible `extensions.code` of the failure, or `null` (`ok`, `other`). */
+  errorCode: string | null;
+}
+
+/** Called once per sent downstream call, after it settles. */
+export type DownstreamCallHook = (event: DownstreamCallEvent) => void;
+
+const OUTCOME_BY_CODE: Readonly<Record<string, DownstreamCallOutcome>> = {
+  DOWNSTREAM_ERROR: 'http_error',
+  DOWNSTREAM_BAD_RESPONSE: 'bad_response',
+  DOWNSTREAM_UNREACHABLE: 'unreachable',
+  DOWNSTREAM_TIMEOUT: 'timeout',
+};
+
+type Verdict = Pick<DownstreamCallEvent, 'outcome' | 'errorCode'>;
+
+const OK: Verdict = { outcome: 'ok', errorCode: null };
+
+/** Classifies a failed call by the typed error the client will see. */
+function classify(err: unknown): Verdict {
+  const code = err instanceof GraphQLError ? err.extensions.code : undefined;
+  const outcome = typeof code === 'string' ? OUTCOME_BY_CODE[code] : undefined;
+  return outcome && typeof code === 'string' ? { outcome, errorCode: code } : { outcome: 'other', errorCode: null };
+}
+
+/**
+ * Invokes the operator hook without letting it touch the response. WHY not
+ * awaited and both throw paths swallowed: a slow, throwing or rejecting hook
+ * must never change a client's data or errors, nor surface as an
+ * `unhandledRejection` that could crash the process. Synchronous hook work
+ * still runs inline on the request path, so keep the hook cheap.
+ */
+function emit(hook: DownstreamCallHook, event: DownstreamCallEvent): void {
+  try {
+    const result: unknown = hook(event);
+    if (result instanceof Promise) result.catch(() => undefined);
+  } catch {
+    // Swallowed on purpose; see above.
+  }
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -188,12 +249,18 @@ export class RestClient {
    *   the caller). WHY on the client: every downstream path -- batched, naive,
    *   list, prefetch -- funnels through `get`, so none can forget them, and the
    *   client is per request, so one caller's credential never reaches another's.
+   * @param onCall Operator hook fired once per *sent* call after it settles
+   *   (see {@link DownstreamCallEvent}). WHY here: `get` is the one place every
+   *   counted call passes, so once every sent call has settled, events equal
+   *   `stats.total` (a call still in flight when the response is sent -- an
+   *   orphaned prefetch or an error-orphaned NAIVE sibling -- fires later).
    */
   constructor(
     private readonly baseUrl: string,
     timeoutMs?: number,
     private readonly maxCalls?: number,
     private readonly headers: Readonly<Record<string, string>> = {},
+    private readonly onCall?: DownstreamCallHook,
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -227,7 +294,32 @@ export class RestClient {
   async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
     this.checkBudget();
     this.track(path);
+    if (!this.onCall) return this.send(path, params, read);
 
+    const started = performance.now();
+    let status: number | null = null;
+    let verdict = OK;
+    try {
+      return await this.send(path, params, read, (arrived) => (status = arrived));
+    } catch (err: unknown) {
+      verdict = classify(err);
+      throw err;
+    } finally {
+      emit(this.onCall, { route: path, status, durationMs: performance.now() - started, ...verdict });
+    }
+  }
+
+  /**
+   * The uncounted transport for one call: build the URL, fetch, check status,
+   * read and contract-check the body. `onStatus` reports the HTTP status as
+   * soon as headers arrive, so a failure while reading the body still knows it.
+   */
+  private async send<T>(
+    path: string,
+    params: QueryParams | undefined,
+    read: ((body: unknown) => T) | undefined,
+    onStatus?: (status: number) => void,
+  ): Promise<T | unknown> {
     const url = joinBaseUrl(this.baseUrl, path);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -242,6 +334,7 @@ export class RestClient {
     } catch (err: unknown) {
       throw fetchFailure(path, this.timeoutMs, err);
     }
+    onStatus?.(res.status);
 
     if (!res.ok) {
       throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {

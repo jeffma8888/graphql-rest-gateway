@@ -2,7 +2,12 @@ import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, validate, GraphQLError, type DocumentNode, type ExecutionResult } from 'graphql';
 import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
-import { RestClient, validateForwardHeaders, validateMaxDownstreamCalls } from './datasources/rest-client.js';
+import {
+  RestClient,
+  validateForwardHeaders,
+  validateMaxDownstreamCalls,
+  type DownstreamCallHook,
+} from './datasources/rest-client.js';
 import { AuthorDataSource } from './datasources/index.js';
 import type { LoaderOptions } from './loaders.js';
 import { depthLimit } from './security/depth-limit.js';
@@ -43,6 +48,16 @@ export interface GatewayOptions {
    * `maxDownstreamCalls` budget. Batching is off (400) when omitted.
    */
   maxBatchSize?: number;
+  /**
+   * Operator-side hook called once for every downstream REST call this gateway
+   * sends, after it settles, with its route template, HTTP status, duration,
+   * outcome and error code (see `DownstreamCallEvent`). WHY a hook and not a response
+   * field: per-route data is backend topology, which clients must not see.
+   * Never awaited; a throw or rejection is swallowed, so it cannot change a
+   * response. Budget-refused calls and the `/readyz` probe fire nothing. An
+   * orphaned lookahead prefetch can fire after its response was sent.
+   */
+  onDownstreamCall?: DownstreamCallHook;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -293,6 +308,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,
         downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
+        onDownstreamCall: opts.onDownstreamCall,
       });
       contexts.set(request, context);
     }

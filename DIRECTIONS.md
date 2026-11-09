@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-77
+    lenses: narrative-and-docs, new-capability
+    - Candidate A1 -- README §7 says a failing `Book.author` prefetch is "re-sent once (2 calls)"; it is sent exactly once and always has been. Fix that sentence and the stale §8 lookahead off-case list, and close row 55
+    - Candidate A2 -- The README's Programmatic usage snippet still never exits: add `await app.close()` and run the snippet itself as a doc-test (row 46)
+    - Candidate A3 -- Stale figures pinned as literals: coverage badge and §8 say ~84/86/89 % (live 95.23/96.38/96.61 %); §7 says the sample query "costs 351" (live 501 for the §3 sample, 356 for the benchmark). Re-derive both and replace the literal pins (row 29)
+    - Candidate B1 -- Relay global object identification: `interface Node` + `Query.node(id: ID!)` / `nodes(ids: [ID!]!)`, refetched through the existing batched by-id loaders (row 49)
+    - Candidate B2 -- Bounded nested lists: `Author.books(first: Int)` / `Book.reviews(first: Int)`, sliced after the batched fetch (row 48)
+    - Candidate B3 -- Operator-side downstream call hook: `createGateway({ onDownstreamCall })` receives `{ route, status, durationMs, errorCode, outcome }` for every REST call (row 10, dependency-free first slice)
+    winner: B3
+    ship: pending (not yet decided)
   iter-76
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Re-land iter-75's root-fragment / root `__typename` lookahead (3 serial hops → 2, same call count); it lost only to a reviewer auth outage
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Two §7 failure-contract sentences are false at HEAD: out-of-range cursors and body-stall timeouts. Rewrite them to the measured behaviour and pin each with a behaviour test
     - Candidate B3 -- The suite pins two false figures as literals (coverage ~84/86/89 % vs 95.3/96.3/96.6 %; "sample query costs 351" vs 501/356). Re-derive both and replace the literal pins with live checks
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 0bb8e0f
   iter-75
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- `check-backend` calls the gateway's own data sources instead of re-spelling the 5 routes and their query params, so a green check is about the requests the gateway actually sends
@@ -431,4 +441,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-43 scouted iterations
+44 scouted iterations

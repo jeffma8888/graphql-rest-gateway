@@ -27,6 +27,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   maxDownstreamCalls: true,
   forwardHeaders: true,
   maxBatchSize: true,
+  onDownstreamCall: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -141,6 +142,12 @@ function assertLoaderOptions(value: unknown): void {
   }
 }
 
+/** A hook that is not callable would otherwise throw on the first downstream call, mid-request. */
+function assertFunction(key: string, value: unknown): void {
+  if (value === undefined || typeof value === 'function') return;
+  throw new TypeError(`${key} must be a function, got ${describe(value)}`);
+}
+
 /** Throws `TypeError`/`RangeError` naming the offending key; called first thing in `createGateway`. */
 export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOptions {
   assertObject(opts);
@@ -150,4 +157,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertPositiveInt('maxComplexity', opts.maxComplexity);
   assertPositiveInt('downstreamTimeoutMs', opts.downstreamTimeoutMs, MAX_TIMEOUT_MS);
   assertLoaderOptions(opts.loaderOptions);
+  assertFunction('onDownstreamCall', opts.onDownstreamCall);
 }

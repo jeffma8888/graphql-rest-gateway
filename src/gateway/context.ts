@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { RestClient } from './datasources/rest-client.js';
+import { RestClient, type DownstreamCallHook } from './datasources/rest-client.js';
 import { buildDataSources, type DataSources } from './datasources/index.js';
 import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders.js';
 import { buildServices, type Services } from './services.js';
@@ -40,6 +40,8 @@ export interface CreateContextOptions {
    * (`createGateway` fills it from the `forwardHeaders` allowlist). Unset = none.
    */
   downstreamHeaders?: Readonly<Record<string, string>>;
+  /** Operator hook fired once per sent downstream call; forwarded to RestClient. Unset = none. */
+  onDownstreamCall?: DownstreamCallHook;
 }
 
 /**
@@ -67,6 +69,7 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
       opts.downstreamTimeoutMs,
       opts.maxDownstreamCalls,
       opts.downstreamHeaders,
+      opts.onDownstreamCall,
     );
   const datasources = buildDataSources(restClient);
   const loaderOptions = opts.loaderOptions ?? BATCHED;

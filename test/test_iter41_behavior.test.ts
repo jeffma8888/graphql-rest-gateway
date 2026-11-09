@@ -60,7 +60,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
     expect(readme).toContain('`downstreamTimeoutMs`');
   });
 
-  it('GatewayOptions table has exactly 8 data rows', () => {
+  it('GatewayOptions table has exactly 9 data rows', () => {
     const optionsIdx = readme.indexOf('`GatewayOptions`');
     const nextHeadingIdx = readme.indexOf('`BackendOptions`', optionsIdx);
     const section = readme.slice(optionsIdx, nextHeadingIdx);
@@ -68,7 +68,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
       .split('\n')
       .filter((line) => line.startsWith('|') && !line.includes('---'));
     const dataRows = tableRows.slice(1);
-    expect(dataRows.length).toBe(8);
+    expect(dataRows.length).toBe(9); // 9th row: onDownstreamCall (iter-77)
   });
 });
 
@@ -120,7 +120,7 @@ describe('EB3 — GatewayOptions drift guard', () => {
     ).toEqual([]);
   });
 
-  it('contains exactly the expected 8 properties', () => {
+  it('contains exactly the expected 9 properties', () => {
     const expected = [
       'downstreamTimeoutMs',
       'forwardHeaders',
@@ -129,6 +129,7 @@ describe('EB3 — GatewayOptions drift guard', () => {
       'maxComplexity',
       'maxDepth',
       'maxDownstreamCalls',
+      'onDownstreamCall',
       'restBaseUrl',
     ];
     expect(props).toEqual(expected);

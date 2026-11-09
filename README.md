@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1026%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1065%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -185,6 +185,7 @@ await gateway.close();
 | `maxDownstreamCalls` | `number` | unlimited | Per-request cap on downstream REST calls sent; a call past it fails with `DOWNSTREAM_BUDGET_EXCEEDED` (positive integer, else `RangeError`) |
 | `forwardHeaders` | `readonly string[]` | `[]` (none) | Edge request headers (case-insensitive) copied onto every downstream REST call of the same request, e.g. `['authorization', 'x-request-id']`; invalid or hop-by-hop names throw |
 | `maxBatchSize` | `number` | unset → batching off | Opt-in request batching: a POST whose JSON body is an array of up to this many operations is served as one batch sharing one loader set and one `maxDownstreamCalls` budget; a larger batch gets HTTP 413 (positive integer, else `RangeError`) |
+| `onDownstreamCall` | `(event: DownstreamCallEvent) => void` | unset → no hook | Operator hook called once per downstream REST call sent, after it settles, with `{ route, status, durationMs, outcome, errorCode }`; never awaited, throws and rejections are swallowed (a function, else `TypeError`) |
 
 `createGateway` validates the whole object synchronously, before anything is built: an unknown key throws `TypeError` with a did-you-mean hint (`maxComplexty` → `maxComplexity`), even when its value is `undefined`, and an explicit `undefined` value means omitted. Limits are unlimited only by omission (`maxDownstreamCalls`) or default (`maxDepth` 10, `maxComplexity` 1000); `NaN`/`Infinity` are rejected.
 
@@ -195,7 +196,7 @@ await gateway.close();
 | `latencyMs` | `number` | `10` | Artificial latency added to every data request (ms) |
 | `forceCloseConnections` | `boolean` | `false` | Destroy idle keep-alive sockets on close instead of waiting for timeout |
 
-Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `NAIVE`, `BATCHED`, `LoaderOptions`, `buildBackend`, `BackendOptions`, `schema`.
+Exported symbols: `createGateway`, `GatewayOptions`, `GatewayServer`, `createContext`, `parseAuth`, `GatewayContext`, `AuthContext`, `NAIVE`, `BATCHED`, `LoaderOptions`, `buildBackend`, `BackendOptions`, `schema`, `DownstreamCallEvent` (type).
 
 ---
 
@@ -332,13 +333,13 @@ Every executed response also includes `extensions.downstreamCalls` with a single
 A bearer token is parsed per request and threaded through `context.auth` (`parseAuth` in `src/gateway/context.ts`). A stub token format `user:<id>:<scope,scope>` demonstrates the pattern without pulling in an auth vendor; swap `parseAuth` for real JWT verification in production. `Review.reviewer` is treated as PII and redacted to `REDACTED` unless the caller is both authenticated **and** carries the `pii` scope — a concrete, tested example of scope-based field authorization. `requireAuth(ctx)` is an internal helper in `src/gateway/context.ts` that throws a typed error (`extensions.code = UNAUTHENTICATED`) when the caller is not authenticated (missing or unparseable token), but no shipped field uses it, so today no request receives `UNAUTHENTICATED`; the code is reserved for future schema fields that adopt the helper.
 
 ### Observability
-The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. The per-request gateway count is surfaced to clients as [`extensions.downstreamCalls`](#downstream-call-metrics). This is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
+The `RestClient` and the REST backend both count calls; the backend exposes `GET /__stats` and `POST /__stats/reset`. The per-request gateway count is surfaced to clients as [`extensions.downstreamCalls`](#downstream-call-metrics). Operators get the per-call view through `createGateway({ onDownstreamCall })`: it is called exactly once for every downstream call the gateway sends. When all of a request's calls settle before its response, the number of events equals `extensions.downstreamCalls.total`. Each event is `{ route, status, durationMs, outcome, errorCode }`. `route` is the route template (`/books/by-author`, without the base URL's path prefix), and the event carries no URL, ids, query params, host or headers. `status` is the HTTP status, or `null` when no response arrived. `outcome` is one of `ok`, `http_error`, `bad_response`, `unreachable`, `timeout` or `other`. `errorCode` is the client-visible `extensions.code` (`DOWNSTREAM_ERROR`, `DOWNSTREAM_BAD_RESPONSE`, `DOWNSTREAM_UNREACHABLE`, `DOWNSTREAM_TIMEOUT`), or `null` for `ok` and `other`. A call refused by `maxDownstreamCalls` is never sent and fires nothing, and neither does the `/readyz` probe. A call can still be in flight when the response is sent, and it then settles and fires after its response: an orphaned lookahead prefetch, or a sibling NAIVE load still pending when an error ended its list early. Such a call fires an event but can be missing from that response's `extensions.downstreamCalls.total`, so the hook is the complete count. The hook is not awaited, and a sync throw or async rejection is swallowed, so it cannot change a response. This hook is the seam an OpenTelemetry span exporter would hook into (see [what's next](#10-what-id-do-next-in-production)).
 
 ---
 
 ## 8. Testing
 
-`npm test` — 1026 tests across 46 files (Vitest), all green:
+`npm test` — 1065 tests across 47 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -353,6 +354,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Contract-breaking 2xx bodies** (`test_iter73_behavior.test.ts`): a stub in front of the bundled backend corrupts one route at a time (an html or empty body, a wrapped list, a null row, a missing, mistyped or snake_case field, a bad `/authors` page) and each becomes `DOWNSTREAM_BAD_RESPONSE` naming the route, with no body text echoed, partial data kept, the call counted once, `DOWNSTREAM_ERROR` unchanged for non-2xx, and the benchmark still at 3 batched / 21 naive calls.
 - **Readiness probe** (`test_iter74_behavior.test.ts`): `/readyz` answers 200 ready against the bundled backend and 503 with a typed code against a closed port, a 500, an html page, an off-contract page and a stalled backend; concurrent probes coalesce into one downstream call, a recovered backend is ready on the next probe, `/healthz` stays static, and connection refused reaches GraphQL clients as `DOWNSTREAM_UNREACHABLE` with no host or port in the message.
 - **Root fragments keep the lookahead** (`test_iter76_behavior.test.ts`): `query { ...Q }`, `... on Query`, typeless inline, nested fragments and a root `__typename` take the same 2 serial hops and per-route calls as the inline spelling with identical data, cost and budget admission; a list root hidden in a fragment, `__schema` and NAIVE still refuse, and a `@skip`-excluded list fragment does not count.
+- **Downstream call hook** (`test_iter77_behavior.test.ts`): a per-route hit-counting stub in front of the bundled backend checks that `onDownstreamCall` fires exactly once per sent call (3 batched, 21 naive, events == `downstreamCalls.total` == stub hits), never for budget-refused calls, `/readyz` or depth/complexity rejections, with the 5-key event carrying only the route template, each failure mode's outcome and client `extensions.code`, and a throwing, rejecting or never-settling hook leaving the response byte-identical.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

@@ -550,7 +550,7 @@ describe('EB11 - FORWARD_HEADERS is validated before anything listens', () => {
 describe('EB12 - README documents forwardHeaders / FORWARD_HEADERS', () => {
   const readme = readFileSync(resolve(root, 'README.md'), 'utf8');
 
-  it('GatewayOptions table lists forwardHeaders and has exactly 8 data rows', () => {
+  it('GatewayOptions table lists forwardHeaders and has exactly 9 data rows', () => {
     const start = readme.indexOf('**`GatewayOptions`**');
     expect(start).toBeGreaterThanOrEqual(0);
     const rest = readme.slice(start);
@@ -562,7 +562,7 @@ describe('EB12 - README documents forwardHeaders / FORWARD_HEADERS', () => {
       table.push(lines[i] ?? '');
     }
     const dataRows = table.slice(1).filter((l) => !/^\|\s*-/.test(l));
-    expect(dataRows).toHaveLength(8);
+    expect(dataRows).toHaveLength(9); // 9th row: onDownstreamCall (iter-77)
     expect(dataRows.some((l) => l.includes('`forwardHeaders`'))).toBe(true);
   });
 

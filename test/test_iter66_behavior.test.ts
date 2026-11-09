@@ -337,7 +337,7 @@ describe('EB11 - fixed and independent of the other limits', () => {
     expect(s.calls).toBe(0);
   });
 
-  it('no new GatewayOptions row / env var: README options table still has exactly 8 rows, none token-related', () => {
+  it('no new GatewayOptions row / env var: README options table has exactly 9 rows (onDownstreamCall added at iter-77), none token-related', () => {
     const start = README.indexOf('**`GatewayOptions`**');
     expect(start).toBeGreaterThan(-1);
     const end = README.indexOf('**`BackendOptions`**', start);
@@ -345,7 +345,7 @@ describe('EB11 - fixed and independent of the other limits', () => {
     const rows = README.slice(start, end)
       .split('\n')
       .filter((l) => /^\| `[A-Za-z]+` \|/.test(l));
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(9);
     expect(rows.join('\n')).not.toMatch(/token/i);
     expect(README).not.toMatch(/MAX_TOKENS/);
   });

@@ -3,3 +3,4 @@ export { createContext, parseAuth, type GatewayContext, type AuthContext } from 
 export { NAIVE, BATCHED, type LoaderOptions } from './gateway/loaders.js';
 export { buildBackend, type BackendOptions } from './rest-backend/server.js';
 export { schema } from './gateway/schema.js';
+export type { DownstreamCallEvent } from './gateway/datasources/rest-client.js';
