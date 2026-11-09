@@ -11,6 +11,10 @@
       "import": "./dist/src/lib.js"
     }
   },
+  "bin": {
+    "graphql-rest-gateway": "dist/src/index.js",
+    "graphql-rest-gateway-check-backend": "dist/src/check-backend-main.js"
+  },
   "files": [
     "dist/src",
     "schema.graphql",

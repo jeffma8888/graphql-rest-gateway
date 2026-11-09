@@ -77,6 +77,23 @@ export function readRestBaseUrl(raw: string | undefined): string | undefined {
 }
 
 /**
+ * The gateway takes no arguments: every setting is an environment variable. A
+ * flag is still refused rather than ignored, because `npx graphql-rest-gateway --help`
+ * would otherwise boot a live server (the bundled demo backend when `REST_BASE_URL`
+ * is unset) instead of telling the operator their input was not understood.
+ * Returns the one-line error for the first argument, or `undefined` when there
+ * are none; the caller exits 2 without starting anything, like `check-backend`.
+ */
+export function rejectArguments(argv: readonly string[]): string | undefined {
+  const first = argv[0];
+  if (first === undefined) return undefined;
+  return (
+    `graphql-rest-gateway: unknown argument ${JSON.stringify(first)} ` +
+    '(no arguments are supported; configure it with environment variables such as REST_BASE_URL)'
+  );
+}
+
+/**
  * Comma-separated header allowlist. Whitespace is trimmed and empty entries
  * (a trailing comma) dropped, so `' authorization , x-request-id ,'` is two
  * names; each is then validated like the library option, naming the variable.

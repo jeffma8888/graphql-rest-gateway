@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1147%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1177%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -86,6 +86,16 @@ Other entry points:
 | `npm run build` | Type-check + emit to `dist/` |
 
 > `reviewer` is redacted to `REDACTED` unless the request carries a bearer token with the `pii` scope. Send header `Authorization: Bearer user:42:pii` (see [Auth context](#auth-context)) to reveal it.
+
+**Installed from npm.** The package ships two commands, so you can run the gateway and its pre-flight check without a clone. `npx graphql-rest-gateway` is `npm start`, and `npx graphql-rest-gateway-check-backend` is `npm run check-backend` (same `--json` flag and exit codes 0/1/2). The gateway takes no arguments: it is configured with the same environment variables as `npm start` (see the table below), and any argument, `--help` included, exits 2 without starting anything. Install first (the block's first line): without a local install, npx looks `graphql-rest-gateway-check-backend` up as a registry package name, so the one-shot form is `npx -p graphql-rest-gateway graphql-rest-gateway-check-backend`.
+
+```bash
+npm install graphql-rest-gateway
+REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway-check-backend
+REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
+# -> REST backend (external): http://127.0.0.1:4001
+# -> GraphQL gateway + GraphiQL: http://localhost:4000/graphql
+```
 
 ### Front your own REST service (`npm start` environment)
 
@@ -341,7 +351,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1147 tests across 49 files (Vitest), all green:
+`npm test` — 1177 tests across 50 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -359,6 +369,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Downstream call hook** (`test_iter77_behavior.test.ts`): a per-route hit-counting stub in front of the bundled backend checks that `onDownstreamCall` fires exactly once per sent call (3 batched, 21 naive, events == `downstreamCalls.total` == stub hits), never for budget-refused calls, `/readyz` or depth/complexity rejections, with the 5-key event carrying only the route template, each failure mode's outcome and client `extensions.code`, and a throwing, rejecting or never-settling hook leaving the response byte-identical.
 - **Bounded nested lists** (`test_iter78_behavior.test.ts`): nested `books(first)` and `reviews(first)` return the prefix the backend sent, clamp to 0..100 (checked against a 150-row stub), give `[]` for 0 or negative bounds and the whole list when omitted, keep 3 batched / 21 naive calls, share one call across aliases with different bounds, ask `/reviews/by-book` only for kept books, keep the lookahead prefetch, and price the benchmark shape with `first: 1` at 46.
 - **Clamped complexity pricing** (`test_iter79_behavior.test.ts`): `first`/`last` above 100 on `authors`, `books` and `reviews` (literal or `$var`) cost the same as 100 with the same data and calls, wide subtrees such as `authors(first: 5000)` over books and reviews are still refused at 3901 with 0 downstream calls, and prices for 0..100 are pinned unchanged (`1 + 3n`, `21 + 5n`, the benchmark shape at 46).
+- **Installed commands** (`test_iter80_behavior.test.ts`): builds and packs the package once, links it into a temp consumer offline, then runs both `bin` commands through their shebangs: the gateway boots and serves the nested query at 3 downstream calls, SIGTERM exits 0, any argument exits 2 before anything listens, and check-backend keeps its `--json` output and 0/1/2 exit codes.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

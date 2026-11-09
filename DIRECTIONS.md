@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-80
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- The published package can run what the README tells operators to run: `bin` entries for the gateway and `check-backend` (`npx graphql-rest-gateway`, `npx graphql-rest-gateway-check-backend`)
+    - Candidate A2 -- A per-request correlation id: echo or mint `x-request-id` on the response and put `requestId` on every `onDownstreamCall` event (row 72)
+    - Candidate A3 -- Probes are never cacheable: `/healthz` and `/readyz` send `cache-control: no-store` (row 61)
+    - Candidate B1 -- One admission rule: delete `security/depth-limit.ts` and the `depth: -1` sentinel, so cost and depth come from ONE `measureOperation` walk per operation
+    - Candidate B2 -- One positive-integer rule for every numeric `createGateway` option: delete `validateMaxBatchSize` (server.ts:74) and `validateMaxDownstreamCalls` (rest-client.ts:47) in favour of options.ts's `assertPositiveInt`
+    - Candidate B3 -- Replace the scattered "`n-plus-1.test.ts` unmodified vs git HEAD" guards with ONE content guard, so the suite runs outside a git checkout
+    winner: A1
+    ship: pending (not yet decided)
   iter-79
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Admission prices the clamped page size: `first`/`last` count as `min(n, 100)` for `authors`, `books` and `reviews`, so a query is never refused for rows the gateway would never fetch (row 74)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `npm start` opt-in boot pre-flight `PREFLIGHT=warn|fail` that runs the shipped `checkBackend` before listening (row 41)
     - Candidate B3 -- `/readyz` works against an authenticated backend: an opt-in, operator-owned readiness credential (`readinessHeaders` / `READYZ_HEADERS`), and the 503 body names the downstream status (row 57)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 15583d2
   iter-78
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Bounded nested lists: `Author.books(first: Int)` / `Book.reviews(first: Int)`, sliced after the batched fetch (row 48)
@@ -461,4 +471,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-46 scouted iterations
+47 scouted iterations
