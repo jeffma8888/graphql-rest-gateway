@@ -21,10 +21,19 @@ export type Scalars = {
 
 export type Author = {
   bio: Scalars['String']['output'];
-  /** All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors. */
+  /**
+   * All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors.
+   * `first` keeps at most that many books (clamped to 0..100; omitted or null keeps all). The
+   * slice happens after the one batched fetch, so it never adds a downstream call.
+   */
   books: Array<Book>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+};
+
+
+export type AuthorBooksArgs = {
+  first?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type AuthorConnection = {
@@ -44,10 +53,18 @@ export type Book = {
   /** The author of this book (batched by author id). */
   author: Author;
   id: Scalars['ID']['output'];
-  /** All reviews for this book. Batched by book id -> one downstream call for a whole page of books. */
+  /**
+   * All reviews for this book. Batched by book id -> one downstream call for a whole page of books.
+   * `first` keeps at most that many reviews (same clamp and semantics as `Author.books(first)`).
+   */
   reviews: Array<Review>;
   title: Scalars['String']['output'];
   year: Scalars['Int']['output'];
+};
+
+
+export type BookReviewsArgs = {
+  first?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type PageInfo = {
@@ -206,7 +223,7 @@ export type ResolversParentTypes = ResolversObject<{
 
 export type AuthorResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Author'] = ResolversParentTypes['Author']> = ResolversObject<{
   bio?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  books?: Resolver<Array<ResolversTypes['Book']>, ParentType, ContextType>;
+  books?: Resolver<Array<ResolversTypes['Book']>, ParentType, ContextType, Partial<AuthorBooksArgs>>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -228,7 +245,7 @@ export type AuthorEdgeResolvers<ContextType = GatewayContext, ParentType extends
 export type BookResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Book'] = ResolversParentTypes['Book']> = ResolversObject<{
   author?: Resolver<ResolversTypes['Author'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
-  reviews?: Resolver<Array<ResolversTypes['Review']>, ParentType, ContextType>;
+  reviews?: Resolver<Array<ResolversTypes['Review']>, ParentType, ContextType, Partial<BookReviewsArgs>>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   year?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;

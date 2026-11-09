@@ -27,8 +27,12 @@ type Author {
   id: ID!
   name: String!
   bio: String!
-  "All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors."
-  books: [Book!]!
+  """
+  All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors.
+  `first` keeps at most that many books (clamped to 0..100; omitted or null keeps all). The
+  slice happens after the one batched fetch, so it never adds a downstream call.
+  """
+  books(first: Int): [Book!]!
 }
 
 type Book {
@@ -37,8 +41,11 @@ type Book {
   year: Int!
   "The author of this book (batched by author id)."
   author: Author!
-  "All reviews for this book. Batched by book id -> one downstream call for a whole page of books."
-  reviews: [Review!]!
+  """
+  All reviews for this book. Batched by book id -> one downstream call for a whole page of books.
+  `first` keeps at most that many reviews (same clamp and semantics as `Author.books(first)`).
+  """
+  reviews(first: Int): [Review!]!
 }
 
 type Review {

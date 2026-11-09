@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import type { AuthorBooksArgs, BookReviewsArgs } from '../generated/graphql.js';
 import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
 import type { AuthorPage, DataSources } from './datasources/index.js';
 import type { Loaders } from './loaders.js';
@@ -16,6 +17,18 @@ const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 10;
 
 const clamp = (n: number): number => Math.min(Math.max(n, 0), MAX_PAGE_SIZE);
+
+/**
+ * Nested-list `first` (`Author.books`, `Book.reviews`): the first `first` rows
+ * in downstream order, under the same clamp as `authors`. Applied AFTER the
+ * batched by-key load, never as part of the loader key, so aliases with
+ * different bounds (and the lookahead prefetch, which ignores arguments) share
+ * one cached list and one downstream call. `slice` returns a new array, so the
+ * DataLoader-cached list is never mutated. Omitted/null keeps the whole list.
+ */
+function takeFirst<T>(rows: T[], first: number | null | undefined): T[] {
+  return first == null ? rows : rows.slice(0, clamp(first));
+}
 
 export interface PageArgs {
   first?: number | null;
@@ -158,8 +171,8 @@ export class BookService {
     return this.loaders.bookById.load(id);
   }
 
-  booksForAuthor(authorId: string): Promise<BookRow[]> {
-    return this.loaders.booksByAuthorId.load(authorId);
+  async booksForAuthor(authorId: string, first?: AuthorBooksArgs['first']): Promise<BookRow[]> {
+    return takeFirst(await this.loaders.booksByAuthorId.load(authorId), first);
   }
 }
 
@@ -178,8 +191,8 @@ export class ReviewService {
     });
   }
 
-  reviewsForBook(bookId: string): Promise<ReviewRow[]> {
-    return this.loaders.reviewsByBookId.load(bookId);
+  async reviewsForBook(bookId: string, first?: BookReviewsArgs['first']): Promise<ReviewRow[]> {
+    return takeFirst(await this.loaders.reviewsByBookId.load(bookId), first);
   }
 }
 

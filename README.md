@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1065%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1115%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -283,6 +283,8 @@ The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true,
 
 Paging works in both directions. `first`/`after` reads forward (`first` defaults to 10 when neither `first` nor `last` is given). `last`/`before` reads backward: `authors(last: 2)` is the tail of the list, and `authors(last: 2, before: startCursor)` is the previous page, so walking `before: startCursor` while `hasPreviousPage` is true visits every item exactly once. `after` and `before` together select a window, for example `authors(after: c1, before: c5)` returns the items strictly between those two cursors, and `first` or `last` then takes from its start or end. Passing `first` and `last` together is an error with `extensions.code = BAD_PAGINATION_ARGS`, raised before any downstream call. Any `before` costs 1 downstream call. `last` without `before` costs 1 call when the tail fits in the first page read, and 2 otherwise, because the REST contract has no count or tail route, so the gateway learns `totalCount` from one page and then reads the tail. Page sizes clamp to 0..100, and a 0 or negative `first`/`last` returns an empty page (`edges: []`, with `totalCount` still filled in). The gateway also truncates every page to its clamped size, rather than trusting the backend's `limit`.
 
+**Nested lists take a plain `first` bound.** `Author.books(first: Int)` and `Book.reviews(first: Int)` return at most `first` items, in the order the backend returned them, for example `author(id: "a1") { books(first: 2) { id } }` for an author's first 2 books. The bound clamps to 0..100 like `authors`. A 0 or negative `first` returns `[]` with no error, and an omitted or null `first` returns the whole list. The slice happens after the one batched by-key call, so downstream call counts are unchanged, aliases with different bounds share that one call, and backend response bytes for `/books/by-author` and `/reviews/by-book` do not shrink. What shrinks is the response to the client, plus the grandchild keys: `books(first: 1) { reviews { id } }` asks `/reviews/by-book` only for the books that were kept. It is a bound, not a connection: there is no `after`, `pageInfo` or `totalCount` on nested lists. Admission cost counts `first` as written, before the clamp, so the benchmark-shaped query `authors(first: 5)` with `books(first: 1) { id title reviews(first: 1) { id rating } }` is priced at 46 instead of 346, while `author(id: "a1") { books(first: 1000) { id } }` costs 1002 and is refused under the default `maxComplexity` of 1000. To get the whole list, omit `first`.
+
 ### Query depth + complexity limiting
 Two custom GraphQL **validation rules** run before execution (`src/gateway/security/`):
 - **Depth limit** rejects queries nested beyond `maxDepth` (default 10). Follows fragment spreads; ignores introspection meta-fields so GraphiQL keeps working.
@@ -339,7 +341,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1065 tests across 47 files (Vitest), all green:
+`npm test` — 1115 tests across 48 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -355,6 +357,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Readiness probe** (`test_iter74_behavior.test.ts`): `/readyz` answers 200 ready against the bundled backend and 503 with a typed code against a closed port, a 500, an html page, an off-contract page and a stalled backend; concurrent probes coalesce into one downstream call, a recovered backend is ready on the next probe, `/healthz` stays static, and connection refused reaches GraphQL clients as `DOWNSTREAM_UNREACHABLE` with no host or port in the message.
 - **Root fragments keep the lookahead** (`test_iter76_behavior.test.ts`): `query { ...Q }`, `... on Query`, typeless inline, nested fragments and a root `__typename` take the same 2 serial hops and per-route calls as the inline spelling with identical data, cost and budget admission; a list root hidden in a fragment, `__schema` and NAIVE still refuse, and a `@skip`-excluded list fragment does not count.
 - **Downstream call hook** (`test_iter77_behavior.test.ts`): a per-route hit-counting stub in front of the bundled backend checks that `onDownstreamCall` fires exactly once per sent call (3 batched, 21 naive, events == `downstreamCalls.total` == stub hits), never for budget-refused calls, `/readyz` or depth/complexity rejections, with the 5-key event carrying only the route template, each failure mode's outcome and client `extensions.code`, and a throwing, rejecting or never-settling hook leaving the response byte-identical.
+- **Bounded nested lists** (`test_iter78_behavior.test.ts`): nested `books(first)` and `reviews(first)` return the prefix the backend sent, clamp to 0..100 (checked against a 150-row stub), give `[]` for 0 or negative bounds and the whole list when omitted, keep 3 batched / 21 naive calls, share one call across aliases with different bounds, ask `/reviews/by-book` only for kept books, keep the lookahead prefetch, and price the benchmark shape with `first: 1` at 46.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

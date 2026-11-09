@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-78
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Bounded nested lists: `Author.books(first: Int)` / `Book.reviews(first: Int)`, sliced after the batched fetch (row 48)
+    - Candidate A2 -- `onDownstreamCall` events carry per-request correlation: a `requestId` (gateway-generated, or taken from an opt-in validated header) echoed in the response, plus `operationName` when unambiguous (row 72)
+    - Candidate A3 -- Opt-in shared cross-request entity cache (`entityCacheTtlMs`): a repeat by-id query within the TTL makes 0 downstream calls (row 9)
+    - Candidate B1 -- Response keys follow the query's selection order at every level, not resolver completion order (row 68, widened: it is nested and deterministic, not 19/20 at the root)
+    - Candidate B2 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE`, not "Unexpected error." (row 54, behaviour half; no byte cap)
+    - Candidate B3 -- Request-body byte cap: HTTP 413 before the body is parsed (`maxRequestBytes`, finite default) (row 35)
+    winner: A1
+    ship: pending (not yet decided)
   iter-77
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §7 says a failing `Book.author` prefetch is "re-sent once (2 calls)"; it is sent exactly once and always has been. Fix that sentence and the stale §8 lookahead off-case list, and close row 55
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Bounded nested lists: `Author.books(first: Int)` / `Book.reviews(first: Int)`, sliced after the batched fetch (row 48)
     - Candidate B3 -- Operator-side downstream call hook: `createGateway({ onDownstreamCall })` receives `{ route, status, durationMs, errorCode, outcome }` for every REST call (row 10, dependency-free first slice)
     winner: B3
-    ship: pending (not yet decided)
+    ship: PUSHED 0ffeb67
   iter-76
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Re-land iter-75's root-fragment / root `__typename` lookahead (3 serial hops → 2, same call count); it lost only to a reviewer auth outage
@@ -441,4 +451,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-44 scouted iterations
+45 scouted iterations
