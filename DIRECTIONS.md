@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-82
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Batch-wide lookahead gate: a mixed opt-in HTTP batch `[author(id){books}, authors{…books}]` costs the merged operation's 3 calls, not 4 (row 44)
+    - Candidate A2 -- Contained `/authors` windows share one downstream call: `c: authors{totalCount}` + `top: authors(first:3)` costs 1 call, not 2
+    - Candidate A3 -- The lookahead gate runs once per execution, not per by-id root and per `Book.author` resolve (row 67): −20…−29% wall at 120 roots, which iter-81 made worse
+    - Candidate B1 -- "The cost model is a conservative upper bound" is false, and inverted, for nested lists without `first`: re-tell it in README §7, §9 and the complexity.ts doc comment, and pin the measured counter-example
+    - Candidate B2 -- README §7 claims a failing `Book.author` prefetch is "re-sent once (2 calls)", but it is sent exactly once (the services.ts comment says so too). Fix that sentence, the stale §8 iter-70 off-case list and PRODUCT row 55's premise, and pin all of it with the shipped `onDownstreamCall` oracle
+    - Candidate B3 -- §10 names the retired `/__stats` counter as the OpenTelemetry seam; since iter-77 the seam is `onDownstreamCall` (§7 and PRODUCT row 10 already say so). Fix it, and guard that every "seam" the README names is something the package actually exports or serves
+    winner: B1
+    ship: pending (not yet decided)
   iter-81
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One probe responder: `/healthz` and `/readyz` served by one plugin from one route table and one JSON-response builder (delete `healthzPlugin`)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Batch-wide lookahead gate: a mixed opt-in HTTP batch stops paying +1 downstream call over the merged operation, at unchanged wall time (row 44)
     - Candidate B3 -- The lookahead gate is computed once per operation, not once per by-id root and per `Book.author` resolve (row 67): about −25% wall on wide by-id dashboards, unchanged below 15 roots
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED e762111
   iter-80
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- The published package can run what the README tells operators to run: `bin` entries for the gateway and `check-backend` (`npx graphql-rest-gateway`, `npx graphql-rest-gateway-check-backend`)
@@ -481,4 +491,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-48 scouted iterations
+49 scouted iterations

@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1216%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1243%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -298,7 +298,7 @@ Paging works in both directions. `first`/`after` reads forward (`first` defaults
 ### Query depth + complexity limiting
 Two custom GraphQL **validation rules** run before execution (`src/gateway/security/`):
 - **Depth limit** rejects queries nested beyond `maxDepth` (default 10). Follows fragment spreads; ignores introspection meta-fields so GraphiQL keeps working.
-- **Complexity/cost limit** rejects shallow-but-wide queries (`authors(first: 100) { edges { node { books { reviews { id } } } } }` is priced 3301). Each field costs 1; list fields multiply their subtree by an estimated fan-out (`first`/`last` when present, clamped to 0..100 exactly as the resolvers clamp them, else a default). A `first`/`last` above 100 is never priced above what the resolvers can return: `authors(first: 101)` and `authors(first: 1000)` cost the same 301 as `authors(first: 100)`. Relay wrappers (`edges`/`nodes`/`pageInfo`) get a multiplier of 1 to avoid double-counting the connection's `first`. It's a conservative upper bound — exactly what you want for admission control.
+- **Complexity/cost limit** rejects shallow-but-wide queries (`authors(first: 100) { edges { node { books { reviews { id } } } } }` is priced 3301). Each field costs 1; list fields multiply their subtree by an estimated fan-out (`first`/`last` when present, clamped to 0..100 exactly as the resolvers clamp them, else a default). A `first`/`last` above 100 is never priced above what the resolvers can return: `authors(first: 101)` and `authors(first: 1000)` cost the same 301 as `authors(first: 100)`. Relay wrappers (`edges`/`nodes`/`pageInfo`) get a multiplier of 1 to avoid double-counting the connection's `first`. The estimate is an upper bound only when every list field carries `first`/`last`. A nested `books` or `reviews` with no `first` is priced at the default fan-out of 5 but returns the whole list, so against a backend with 150 books per author `author(id: "a1") { books { id } }` costs 7 for 150 rows while `books(first: 100)` costs 102 for 100 rows. A root `authors` with no `first`/`last` is priced as one row although the page fetches up to 10, so `authors { edges { node { id } } }` costs 4 and `authors(first: 10) { edges { node { id } } }` costs 31 for the same data. Size `maxComplexity` for the bounded spellings, and do not rely on it to cap work for queries that omit `first`/`last`.
   - `first`/`last` supplied as **variables** (`authors(first: $n)`) are counted with their **runtime values** (falling back to the operation's variable default; an omitted or `null` variable counts like an omitted argument). Validation rules can't see variable values, so for variable-dependent operations the same check runs at the start of execution, before any resolver or downstream call, and rejects with the identical `QUERY_TOO_COMPLEX` error. Multi-operation documents are likewise costed at execute time, against the operation selected by `operationName` only. Negative `first`/`last` values (literal or variable) count as **0**, so an alias such as `authors(first: -1000)` can't drive the total cost negative.
 
 Both surface a typed error (`extensions.code = QUERY_TOO_DEEP` / `QUERY_TOO_COMPLEX`) and are covered by unit + HTTP integration tests.
@@ -351,7 +351,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1216 tests across 51 files (Vitest), all green:
+`npm test` — 1243 tests across 52 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -371,6 +371,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Clamped complexity pricing** (`test_iter79_behavior.test.ts`): `first`/`last` above 100 on `authors`, `books` and `reviews` (literal or `$var`) cost the same as 100 with the same data and calls, wide subtrees such as `authors(first: 5000)` over books and reviews are still refused at 3901 with 0 downstream calls, and prices for 0..100 are pinned unchanged (`1 + 3n`, `21 + 5n`, the benchmark shape at 46).
 - **Installed commands** (`test_iter80_behavior.test.ts`): builds and packs the package once, links it into a temp consumer offline, then runs both `bin` commands through their shebangs: the gateway boots and serves the nested query at 3 downstream calls, SIGTERM exits 0, any argument exits 2 before anything listens, and check-backend keeps its `--json` output and 0/1/2 exit codes.
 - **Count-only list roots keep the lookahead** (`test_iter81_behavior.test.ts`): `authors` roots that never select `books`/`reviews` (count, names, pageInfo, cursors; fragments and `@skip`/`@include` honoured) keep the by-id prefetch at 2 serial hops and the same calls, while a list that reaches `books` still refuses with `/books/by-author` called once.
+- **Cost-model docs truth** (`test_iter82_behavior.test.ts`): the §7 cost bullet, the §9 design note and the complexity rule's doc comment are checked against the runtime pricer. Each query the README prints is posted verbatim and must cost the printed figure, and the unbounded-versus-bounded admission cases are re-run against a wide stub.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
@@ -395,7 +396,7 @@ Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% f
 - **Why TypeScript.** DataLoader was invented at Facebook for exactly this problem, so the canonical reference implementation lives in the JS/TS ecosystem — the N+1/batching narrative is cleanest and fastest to build here. The same batching pattern maps directly to **Spring for GraphQL** (`BatchLoaderRegistry`) or **Netflix DGS** (`@DgsDataLoader`); the concept transfers, only the annotations change.
 - **Why GraphQL Yoga (over Apollo Server).** Yoga is lighter, ships GraphiQL, and its envelop plugin system made wiring the custom validation rules a two-line `onValidate` hook. Apollo Server 4 would be an equally valid choice and is more "enterprise-recognizable"; the resolver/service/datasource layering here is server-agnostic.
 - **Why a bundled REST backend (over a public API).** Determinism. Controlling the data lets the benchmark and regression test assert *exact* call counts, and reviewers can run everything with zero external accounts.
-- **Custom depth/complexity rules (over a library).** They're small, dependency-free, and demonstrate understanding of the validation phase — more defensible in an interview than importing a black box. The cost model is intentionally a conservative upper bound.
+- **Custom depth/complexity rules (over a library).** They're small, dependency-free, and demonstrate understanding of the validation phase — more defensible in an interview than importing a black box. The cost model is a static estimate, not a measurement: it bounds the work only when every list carries `first`/`last`, and it prices an omitted bound at a fixed default (see the Complexity/cost limit bullet in §7).
 - **Offset-backed opaque cursors.** Simple and correct for this dataset; opaqueness preserves the freedom to move to keyset pagination later without breaking clients.
 
 ---

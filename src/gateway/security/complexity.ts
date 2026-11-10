@@ -33,8 +33,11 @@ import { getValidationResult, setValidationResult, buildFragmentMap } from './va
  * `pageInfo`) get a multiplier of 1 because they're already bounded by the
  * parent connection's `first`, which avoids double-counting.
  *
- * It's a conservative upper bound, not an exact runtime cost -- which is
- * exactly what you want for an admission-control limit.
+ * It's an estimate, not an exact runtime cost, and an upper bound only when
+ * every list field carries `first`/`last`. An unbounded nested list is priced
+ * at `defaultListSize` but returns the whole list, and a connection with no
+ * `first`/`last` gets the wrapper multiplier of 1 although its resolver fetches
+ * a default page. Operators sizing `maxComplexity` must account for both.
  *
  * `first`/`last` passed as GraphQL variables can't be known during validation
  * (validation rules never see variable values). So the validation rule only
