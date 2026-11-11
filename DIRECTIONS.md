@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-86
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- CI consults the quality bar: the workflow runs `npm run typecheck` and `npm run benchmark -- --threshold 3`, and the benchmark exits 2 on an unknown or malformed flag (row 53)
+    - Candidate A2 -- Every error a client receives carries a machine-readable `extensions.code` from one importable vocabulary: variable-coercion errors get `BAD_USER_INPUT`, and the entry exports `type GatewayErrorCode` (row 58, widened)
+    - Candidate A3 -- The pre-flight works against an authenticated legacy backend: `check-backend --header 'Name: value'` (repeatable) sends operator credentials on all 5 contract calls and never prints them (row 42, auth half)
+    - Candidate B1 -- One admission rule, no cache handshake: fold `depthLimit` into the cost rule and delete `depth-limit.ts`, the per-document `cost`/`depth` cache and both `-1` sentinels. The cache never hits today, so behaviour is unchanged.
+    - Candidate B2 -- One sendable-key gate in `loaders.ts`: collapse `fetchSendable` + `indexBy` + `groupBy` + the 2 post-filter ternaries into one `fetchByKey(keys, fetch, keyOf)` helper. `isSendableKey` is consulted at 1 site, not 5.
+    - Candidate B3 -- Delete the reserved `requireAuth` helper and its never-emitted `UNAUTHENTICATED` code, plus the README sentence that apologises for them, before an error-code vocabulary freezes a code that no request can receive
+    winner: A2
+    ship: pending (not yet decided)
   iter-85
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- By-id keys the REST list syntax cannot carry safely (contain `,`, are empty or padded, or exceed a length cap) resolve per-item `NOT_FOUND` at 0 downstream calls, instead of smuggling a batch past the 100-id cap or poisoning their honest siblings (row 83, widened)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- CI enforces the stated quality bar: the workflow runs `npm run typecheck` and `npm run benchmark -- --threshold 3`, and the benchmark exits 2 on an unknown or malformed flag (row 53)
     - Candidate B3 -- The operator CLI consults the shipped `onDownstreamCall` hook: `LOG_DOWNSTREAM_CALLS=json` makes `npm start` / `npx graphql-rest-gateway` write one JSON line per downstream REST call to stderr
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED eca2592
   iter-84
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Ordered nested lists: `Author.books(first, orderBy: BookOrder)` / `Book.reviews(first, orderBy: ReviewOrder)`, sorted after the one batched fetch
@@ -521,4 +531,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-52 scouted iterations
+53 scouted iterations

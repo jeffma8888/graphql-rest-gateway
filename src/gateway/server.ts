@@ -281,6 +281,47 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
   };
 }
 
+/**
+ * Stamps `extensions.code = "BAD_USER_INPUT"` on graphql-js's variable-coercion
+ * errors (`$n: Int` sent `"x"`, a missing `$id: ID!`, `null` in `[ID!]!`). WHY:
+ * every other error a client can trigger carries a code, and clients branch on
+ * it, but these arrive with none. Matched on ORIGIN, never on message text: by
+ * the time `onExecute` runs, Yoga has already resolved the operation, so an
+ * execution result with no `data` means the executor stopped while building
+ * its execution context, i.e. while coercing variables, before any resolver
+ * (0 downstream calls). Errors that already carry a code or a `path` (field
+ * errors) are left untouched as defence in depth. Message, locations and
+ * `originalError` are preserved. The HTTP 400 comes from the executor's
+ * `extensions.http.status`, which survives only through the
+ * `...error.extensions` spread below; do not drop it.
+ */
+function badUserInputPlugin(): Plugin {
+  return {
+    onExecute() {
+      return {
+        onExecuteDone({ result, setResult }) {
+          if (Symbol.asyncIterator in Object(result)) return;
+          const execResult = result as ExecutionResult;
+          if (execResult.data !== undefined || !execResult.errors?.length) return;
+          setResult({ ...execResult, errors: execResult.errors.map(withBadUserInputCode) });
+        },
+      };
+    },
+  };
+}
+
+/** Copies one request error with `code` added, unless it is a field error or already coded. */
+function withBadUserInputCode(error: GraphQLError): GraphQLError {
+  if (error.path !== undefined || error.extensions?.code !== undefined) return error;
+  return new GraphQLError(error.message, {
+    nodes: error.nodes,
+    source: error.source,
+    positions: error.positions,
+    originalError: error.originalError,
+    extensions: { ...error.extensions, code: 'BAD_USER_INPUT' },
+  });
+}
+
 export function createGateway(opts: GatewayOptions): GatewayServer {
   validateGatewayOptions(opts);
   validateMaxDownstreamCalls(opts.maxDownstreamCalls);
@@ -332,6 +373,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
       securityPlugin(maxDepth, maxComplexity),
       queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),
+      badUserInputPlugin(),
     ],
     graphiql: {
       title: 'graphql-rest-gateway',
