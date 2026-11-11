@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-83
+    lenses: narrative-and-docs, new-capability
+    - Candidate A1 -- README §7 "Request batching" promises a batch costs "the same as one merged query", but a mixed by-id + list batch costs 4 calls against the merged 3, and `maxDownstreamCalls: 3` refuses the batch while it admits the merged op. Disclose it and pin it with a prose==oracle test
+    - Candidate A2 -- README §10 names the bundled backend's `/__stats` counter as the OpenTelemetry "placeholder seam", contradicting §7 Observability, which says `onDownstreamCall` is that seam. Fix §10 (row 80) and guard every named seam against what the package exports
+    - Candidate A3 -- The GraphiQL-visible SDL still describes one-directional paging: `AuthorEdge.cursor` says "pass as `after` to page forward", and every `PageInfo` field has no description, although since iter-71 an edge cursor and `startCursor` are valid `before` values
+    - Candidate B1 -- Ordered nested lists: `Author.books(first, orderBy: BookOrder)` / `Book.reviews(first, orderBy: ReviewOrder)`, sorted after the one batched fetch, so "latest N books" and "top review" screens become expressible at an unchanged call count
+    - Candidate B2 -- Variable-driven bulk lookup `Query.books(ids: [ID!]!): [Book]!` (order-preserving, `null` + per-item `NOT_FOUND` for a missing id, max 100 ids, priced by list length), one downstream call through the existing by-id loader
+    - Candidate B3 -- Aggregate fields `Book.reviewCount: Int!`, `Book.averageRating: Float` and `Author.bookCount: Int!`, computed from the already-batched child lists at 0 extra downstream calls
+    winner: B2
+    ship: pending (not yet decided)
   iter-82
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Batch-wide lookahead gate: a mixed opt-in HTTP batch `[author(id){books}, authors{…books}]` costs the merged operation's 3 calls, not 4 (row 44)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- README §7 claims a failing `Book.author` prefetch is "re-sent once (2 calls)", but it is sent exactly once (the services.ts comment says so too). Fix that sentence, the stale §8 iter-70 off-case list and PRODUCT row 55's premise, and pin all of it with the shipped `onDownstreamCall` oracle
     - Candidate B3 -- §10 names the retired `/__stats` counter as the OpenTelemetry seam; since iter-77 the seam is `onDownstreamCall` (§7 and PRODUCT row 10 already say so). Fix it, and guard that every "seam" the README names is something the package actually exports or serves
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED e0d824f
   iter-81
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One probe responder: `/healthz` and `/readyz` served by one plugin from one route table and one JSON-response builder (delete `healthzPlugin`)
@@ -491,4 +501,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-49 scouted iterations
+50 scouted iterations

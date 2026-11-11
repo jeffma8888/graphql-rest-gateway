@@ -6,6 +6,7 @@ import {
   isNonNullType,
   isObjectType,
   isInterfaceType,
+  valueFromASTUntyped,
   type GraphQLType,
   type GraphQLNamedType,
   type GraphQLObjectType,
@@ -29,7 +30,8 @@ import { getValidationResult, setValidationResult, buildFragmentMap } from './va
  * count: each field costs 1, and a list-returning field multiplies its subtree
  * by an estimated fan-out -- `first`/`last` clamped to 0..MAX_PAGE_SIZE (the
  * same clamp the resolvers apply, so nothing is priced that is never fetched)
- * when present, else `defaultListSize`. Relay wrappers (`edges`, `nodes`,
+ * when present, else the length of a bulk `ids` list (same clamp), else
+ * `defaultListSize`. Relay wrappers (`edges`, `nodes`,
  * `pageInfo`) get a multiplier of 1 because they're already bounded by the
  * parent connection's `first`, which avoids double-counting.
  *
@@ -39,7 +41,7 @@ import { getValidationResult, setValidationResult, buildFragmentMap } from './va
  * `first`/`last` gets the wrapper multiplier of 1 although its resolver fetches
  * a default page. Operators sizing `maxComplexity` must account for both.
  *
- * `first`/`last` passed as GraphQL variables can't be known during validation
+ * `first`/`last`/`ids` passed as GraphQL variables can't be known during validation
  * (validation rules never see variable values). So the validation rule only
  * enforces variable-free operations; for variable-dependent ones it defers to
  * the execute phase (`complexityError` + `variableResolver`), which re-runs
@@ -53,8 +55,12 @@ function isListDeep(type: GraphQLType): boolean {
   return isListType(type);
 }
 
-/** Resolves a variable name to its runtime integer, or `undefined` if unknown/null. */
-export type VariableResolver = (name: string) => number | undefined;
+/**
+ * Resolves a variable name to its raw runtime value (or the operation's
+ * declared default), `undefined` if unknown. Raw rather than integer-only
+ * because `first`/`last` read it as an int and `ids` reads it as a list.
+ */
+export type VariableResolver = (name: string) => unknown;
 
 /**
  * Reads an integer fan-out argument, clamped to `[0, MAX_PAGE_SIZE]` for
@@ -71,9 +77,33 @@ function intArg(field: FieldNode, name: string, cc: CostContext): number | undef
     n = Number.parseInt(value.value, 10);
   } else if (value?.kind === Kind.VARIABLE) {
     cc.usesVariables = true;
-    n = cc.resolveVariable?.(value.name.value);
+    const v = cc.resolveVariable?.(value.name.value);
+    n = typeof v === 'number' && Number.isInteger(v) ? v : undefined;
   }
-  return n === undefined ? undefined : Math.min(Math.max(0, n), MAX_PAGE_SIZE);
+  return n === undefined ? undefined : clampFanOut(n);
+}
+
+const clampFanOut = (n: number): number => Math.min(Math.max(0, n), MAX_PAGE_SIZE);
+
+/**
+ * Reads a bulk-lookup fan-out (`books(ids:)`): the list's length, clamped to
+ * `[0, MAX_PAGE_SIZE]` like `first`. WHY the length: the resolver returns
+ * exactly one item per id, so it is the exact fan-out, not a guess. A literal
+ * list is known at validation, a variable only at execute time. A non-list
+ * value is coerced by GraphQL to a one-element list, so it counts as 1.
+ * Absent or null stays `undefined` (falls back to `defaultListSize`).
+ */
+function listArgLen(field: FieldNode, name: string, cc: CostContext): number | undefined {
+  const value = field.arguments?.find((a) => a.name.value === name)?.value;
+  let raw: unknown;
+  if (value?.kind === Kind.VARIABLE) {
+    cc.usesVariables = true;
+    raw = cc.resolveVariable?.(value.name.value);
+  } else if (value !== undefined) {
+    raw = valueFromASTUntyped(value);
+  }
+  if (raw === undefined || raw === null) return undefined;
+  return clampFanOut(Array.isArray(raw) ? raw.length : 1);
 }
 
 interface CostContext {
@@ -94,6 +124,8 @@ interface CostContext {
  * Builds a resolver over a request's raw variable values, falling back to the
  * operation's declared default when the variable is not supplied at all. An
  * explicit `null` stays null (GraphQL semantics) and counts as an omitted arg.
+ * Values are returned raw; each fan-out reader (`intArg`, `listArgLen`)
+ * decides which shapes it accepts.
  */
 export function variableResolver(
   op: OperationDefinitionNode,
@@ -102,11 +134,10 @@ export function variableResolver(
   return (name) => {
     const vars = variableValues ?? {};
     if (Object.prototype.hasOwnProperty.call(vars, name)) {
-      const v = vars[name];
-      return typeof v === 'number' && Number.isInteger(v) ? v : undefined;
+      return vars[name];
     }
     const def = op.variableDefinitions?.find((d) => d.variable.name.value === name)?.defaultValue;
-    return def?.kind === Kind.INT ? Number.parseInt(def.value, 10) : undefined;
+    return def === undefined ? undefined : valueFromASTUntyped(def);
   };
 }
 
@@ -160,8 +191,9 @@ function measureSelectionSet(
 
       let multiplier = 1;
       if (fieldDef && !RELAY_WRAPPER_FIELDS.has(selection.name.value)) {
-        const first = intArg(selection, 'first', cc) ?? intArg(selection, 'last', cc);
-        if (first !== undefined) multiplier = first;
+        const fanOut =
+          intArg(selection, 'first', cc) ?? intArg(selection, 'last', cc) ?? listArgLen(selection, 'ids', cc);
+        if (fanOut !== undefined) multiplier = fanOut;
         else if (isListDeep(fieldDef.type)) multiplier = cc.defaultListSize;
       }
       cost += 1 + multiplier * child.cost;

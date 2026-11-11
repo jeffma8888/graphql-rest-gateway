@@ -1,6 +1,7 @@
 /**
  * The largest page or bound any list field returns (`authors(first|last)`,
- * `Author.books(first)`, `Book.reviews(first)`).
+ * `Author.books(first)`, `Book.reviews(first)`), and the most ids one
+ * `books(ids:)` bulk lookup accepts.
  *
  * WHY one shared constant: the resolvers clamp to it and the complexity
  * limiter prices fan-out with the same clamp. If the two ever drifted apart,

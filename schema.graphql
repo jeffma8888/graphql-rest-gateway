@@ -21,6 +21,14 @@ type Query {
 
   "Fetch a single book by id (batched via DataLoader under the hood)."
   book(id: ID!): Book
+
+  """
+  Bulk lookup: the books for `ids`, in the order given (a repeated id repeats
+  its book). One batched downstream call for the whole list. An unknown id
+  yields `null` at its index plus a NOT_FOUND error for that item. At most 100
+  ids per request; more is a BAD_ARGUMENT error before any downstream call.
+  """
+  books(ids: [ID!]!): [Book]!
 }
 
 type Author {

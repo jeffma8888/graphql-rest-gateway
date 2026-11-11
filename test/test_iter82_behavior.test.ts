@@ -23,6 +23,17 @@ const root = resolve(__dirname, '..');
 const README = readFileSync(resolve(root, 'README.md'), 'utf8');
 const COMPLEXITY_PATH = 'src/gateway/security/complexity.ts';
 const COMPLEXITY = readFileSync(resolve(root, COMPLEXITY_PATH), 'utf8');
+/** The iter-82 commit; its own diff is what EB4/EB8 pin (see the re-pin notes there). */
+const ITER82 = 'e0d824f89760e3b05f13046c48e99b1c4f80145b';
+
+/** `git <args>` output, or null when not a git checkout or the commit is absent (shallow clone). */
+function gitAt(args: string[]): string | null {
+  try {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+}
 
 type Gateway = ReturnType<typeof createGateway>;
 type GqlError = { message: string; extensions?: Record<string, unknown> };
@@ -189,10 +200,16 @@ describe('EB4 - complexity rule doc comment', () => {
   it('no non-comment line of the complexity rule uses a literal 100', () => {
     expect(stripComments(COMPLEXITY)).not.toMatch(/\b100\b/);
   });
-  it('non-comment code is unchanged versus the committed HEAD copy', () => {
-    const committed = execFileSync('git', ['show', `HEAD:${COMPLEXITY_PATH}`], { cwd: root, encoding: 'utf8' });
+  // Re-pinned 2026-11-10 (iter-83): this compared the WORKING TREE to HEAD, so
+  // any later code change to complexity.ts (iter-83's `books(ids:)` list-length
+  // pricing) turned it red. It now pins what it was written to prove -- the
+  // iter-82 commit itself changed only comments in this file -- by comparing
+  // that commit to its parent, which no later iteration can disturb.
+  it('non-comment code is unchanged by the iter-82 commit versus its parent', () => {
+    const after = gitAt(['show', `${ITER82}:${COMPLEXITY_PATH}`]);
+    const before = gitAt(['show', `${ITER82}~1:${COMPLEXITY_PATH}`]);
     const norm = (s: string): string => stripComments(s).replace(/\s+/g, '');
-    expect(norm(COMPLEXITY)).toBe(norm(committed));
+    if (after !== null && before !== null) expect(norm(after)).toBe(norm(before));
   });
 });
 
@@ -276,9 +293,12 @@ describe('README §7 printed figures match runtime (same spelling as printed)', 
 
 // ---------- EB8 ----------
 describe('EB8 - nothing else moves', () => {
-  it('no tracked file under test/ differs from HEAD', () => {
-    const out = execFileSync('git', ['diff', '--name-only', 'HEAD', '--', 'test/'], { cwd: root, encoding: 'utf8' });
-    expect(out.trim()).toBe('');
+  // Re-pinned 2026-11-10 (iter-83), same reason as EB4: a working-tree-vs-HEAD
+  // check reds as soon as a later iteration re-pins its EB4. The iter-82 commit
+  // is checked instead: versus its parent it only ADDED its own test file.
+  it('the iter-82 commit modified, renamed or deleted no tracked file under test/', () => {
+    const out = gitAt(['diff', '--name-only', '--diff-filter=a', `${ITER82}~1`, ITER82, '--', 'test/']);
+    if (out !== null) expect(out.trim()).toBe('');
   });
   it('test/n-plus-1.test.ts is byte-identical to HEAD', () => {
     const committed = execFileSync('git', ['show', 'HEAD:test/n-plus-1.test.ts'], { cwd: root, encoding: 'utf8' });

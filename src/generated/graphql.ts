@@ -87,6 +87,13 @@ export type Query = {
   authors: AuthorConnection;
   /** Fetch a single book by id (batched via DataLoader under the hood). */
   book?: Maybe<Book>;
+  /**
+   * Bulk lookup: the books for `ids`, in the order given (a repeated id repeats
+   * its book). One batched downstream call for the whole list. An unknown id
+   * yields `null` at its index plus a NOT_FOUND error for that item. At most 100
+   * ids per request; more is a BAD_ARGUMENT error before any downstream call.
+   */
+  books: Array<Maybe<Book>>;
 };
 
 
@@ -105,6 +112,11 @@ export type QueryAuthorsArgs = {
 
 export type QueryBookArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryBooksArgs = {
+  ids: Array<Scalars['ID']['input']>;
 };
 
 export type Review = {
@@ -263,6 +275,7 @@ export type QueryResolvers<ContextType = GatewayContext, ParentType extends Reso
   author?: Resolver<Maybe<ResolversTypes['Author']>, ParentType, ContextType, RequireFields<QueryAuthorArgs, 'id'>>;
   authors?: Resolver<ResolversTypes['AuthorConnection'], ParentType, ContextType, Partial<QueryAuthorsArgs>>;
   book?: Resolver<Maybe<ResolversTypes['Book']>, ParentType, ContextType, RequireFields<QueryBookArgs, 'id'>>;
+  books?: Resolver<Array<Maybe<ResolversTypes['Book']>>, ParentType, ContextType, RequireFields<QueryBooksArgs, 'ids'>>;
 }>;
 
 export type ReviewResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Review'] = ResolversParentTypes['Review']> = ResolversObject<{

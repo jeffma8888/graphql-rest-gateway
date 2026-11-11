@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import type { Resolvers } from '../generated/graphql.js';
 import { willResolveChild } from './lookahead.js';
+import { MAX_PAGE_SIZE } from './pagination/page-size.js';
 
 /**
  * Resolvers are deliberately THIN: each translates a GraphQL field into service
@@ -41,6 +42,34 @@ export const resolvers: Resolvers = {
         });
       }
       return book;
+    },
+    // No lookahead here: a `books(ids:)` root is not in BY_ID_ROOTS, so it
+    // turns the prefetch off for the whole operation (see lookahead.ts).
+    books: (_parent, args, ctx) => {
+      if (args.ids.length > MAX_PAGE_SIZE) {
+        // Refused before any load, so an oversized list costs 0 downstream calls.
+        throw new GraphQLError(
+          `Argument \`ids\` accepts at most ${MAX_PAGE_SIZE} ids; received ${args.ids.length}.`,
+          {
+            extensions: {
+              code: 'BAD_ARGUMENT',
+              argument: 'ids',
+              max: MAX_PAGE_SIZE,
+              received: args.ids.length,
+            },
+          },
+        );
+      }
+      // One promise per item (not Promise.all): graphql-js completes each at its
+      // own index, so an unknown id nulls only its slot and the error path is
+      // ["books", i]. All loads land in one tick -> one batched, deduped call.
+      return args.ids.map(async (id) => {
+        const book = await ctx.services.book.getBook(id);
+        if (!book) {
+          throw new GraphQLError(`Book ${id} not found`, { extensions: { code: 'NOT_FOUND', id } });
+        }
+        return book;
+      });
     },
   },
 
