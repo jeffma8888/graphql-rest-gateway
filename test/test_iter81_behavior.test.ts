@@ -15,7 +15,7 @@ import { createGateway, buildBackend, NAIVE } from '../src/lib';
  * extensions.downstreamCalls.total. Hops: each timed shape gets its OWN
  * latencyMs:50 backend + gateway, so timed runs of one shape are sequential
  * and never overlap another timed shape on the same backend; the shapes run
- * side by side to keep the file fast. Median of 5 runs after 1 warm-up;
+ * side by side to keep the file fast. Fastest of 5 runs after 1 warm-up;
  * "2 hops" < 145 ms, "3 hops" >= 145 ms (the iter-70/76 threshold).
  */
 
@@ -92,7 +92,7 @@ async function readStats(b: string): Promise<Stats> {
 
 // ---------------------------------------------------------------- timed shapes
 type Mode = 'batched' | 'naive';
-type Timed = { median: number; samples: number[]; totals: number[]; stats: Stats; last: GqlResult };
+type Timed = { fastest: number; samples: number[]; totals: number[]; stats: Stats; last: GqlResult };
 const timedShapes: Array<[string, Mode, string, Vars]> = [
   ['EB1', 'batched', EB1, undefined],
   ['EB2', 'batched', EB2, undefined],
@@ -113,7 +113,11 @@ const timedShapes: Array<[string, Mode, string, Vars]> = [
 const timed = new Map<string, Timed>();
 const timedApps: FastifyInstance[] = [];
 
-/** Own slow backend + gateway: warm-up, then 5 sequential runs, stats of the LAST run. */
+/**
+ * Own slow backend + gateway: warm-up, then 5 sequential runs, stats of the LAST run.
+ * `fastest` is the minimum sample: the backend's per-handler sleep is a hard floor
+ * for every hop, and contention (these shapes run concurrently) only adds time.
+ */
 async function measureShape(mode: Mode, query: string, variables: Vars): Promise<Timed> {
   const sApp = buildBackend({ latencyMs: 50 }).app;
   timedApps.push(sApp);
@@ -131,8 +135,7 @@ async function measureShape(mode: Mode, query: string, variables: Vars): Promise
     totals.push(last.extensions?.downstreamCalls?.total ?? -1);
   }
   const stats = await readStats(sBase);
-  const sorted = [...samples].sort((x, y) => x - y);
-  return { median: sorted[2]!, samples, totals, stats, last };
+  return { fastest: Math.min(...samples), samples, totals, stats, last };
 }
 
 let app: FastifyInstance;
@@ -192,8 +195,8 @@ describe('EB1 - a count-only list root keeps the prefetch', () => {
   it('{ A authors(first:3){ totalCount } }: no errors, 4 calls one per route', async () => {
     await expectCalls('EB1', EB1, undefined, 4, R_EB1);
   });
-  it('EB1 median < 145 ms (2 serial hops)', () => {
-    expect(t('EB1').median).toBeLessThan(HOP_MS);
+  it('EB1 fastest < 145 ms (2 serial hops)', () => {
+    expect(t('EB1').fastest).toBeLessThan(HOP_MS);
   });
 });
 
@@ -204,8 +207,8 @@ describe('EB2 - a scalar-only list root keeps the prefetch', () => {
     expect(edges).toHaveLength(3);
     for (const e of edges) expect(typeof e.node.name).toBe('string');
   });
-  it('EB2 median < 145 ms', () => {
-    expect(t('EB2').median).toBeLessThan(HOP_MS);
+  it('EB2 fastest < 145 ms', () => {
+    expect(t('EB2').fastest).toBeLessThan(HOP_MS);
   });
 });
 
@@ -213,8 +216,8 @@ describe('EB3 - a book(id){ reviews } root next to a count list', () => {
   it('3 calls: /books/by-ids, /reviews/by-book, /authors once each', async () => {
     await expectCalls('EB3', EB3, undefined, 3, R_EB3);
   });
-  it('EB3 median < 95 ms (1 hop)', () => {
-    expect(t('EB3').median).toBeLessThan(ONE_HOP_MS);
+  it('EB3 fastest < 95 ms (1 hop)', () => {
+    expect(t('EB3').fastest).toBeLessThan(ONE_HOP_MS);
   });
 });
 
@@ -224,8 +227,8 @@ describe('EB4 - a list that reaches books still refuses (negative oracle)', () =
     const nv = await gql(naive, EB4);
     expect(body.data).toEqual(nv.data);
   });
-  it('EB4 median >= 145 ms (3 hops)', () => {
-    expect(t('EB4').median).toBeGreaterThanOrEqual(HOP_MS);
+  it('EB4 fastest >= 145 ms (3 hops)', () => {
+    expect(t('EB4').fastest).toBeGreaterThanOrEqual(HOP_MS);
   });
 });
 
@@ -239,46 +242,46 @@ describe('EB5 - books reached through fragments still refuses', () => {
       const eb4 = await gql(gw, EB4);
       expect(body.data).toEqual(eb4.data);
     });
-    it(`${name}: median >= 145 ms`, () => {
-      expect(t(key).median).toBeGreaterThanOrEqual(HOP_MS);
+    it(`${name}: fastest >= 145 ms`, () => {
+      expect(t(key).fastest).toBeGreaterThanOrEqual(HOP_MS);
     });
   }
 });
 
 describe('EB6 - @skip/@include honoured inside the list', () => {
-  it('books @skip(if: true): 4 calls, median < 145 ms, no books in the list', async () => {
+  it('books @skip(if: true): 4 calls, fastest < 145 ms, no books in the list', async () => {
     const body = await expectCalls('EB6_LIT', EB6_LIT, undefined, 4, R_EB1);
     const edges = (body.data?.authors as { edges: Array<{ node: Record<string, unknown> }> }).edges;
     for (const e of edges) expect(e.node).not.toHaveProperty('books');
-    expect(t('EB6_LIT').median).toBeLessThan(HOP_MS);
+    expect(t('EB6_LIT').fastest).toBeLessThan(HOP_MS);
   });
-  it('books @skip(if: $s) with s=false: 4 calls, median >= 145 ms', async () => {
+  it('books @skip(if: $s) with s=false: 4 calls, fastest >= 145 ms', async () => {
     const body = await expectCalls('EB6_VAR_F', EB6_VAR, { s: false }, 4, R_EB1);
     const edges = (body.data?.authors as { edges: Array<{ node: Record<string, unknown> }> }).edges;
     for (const e of edges) expect(e.node).toHaveProperty('books');
-    expect(t('EB6_VAR_F').median).toBeGreaterThanOrEqual(HOP_MS);
+    expect(t('EB6_VAR_F').fastest).toBeGreaterThanOrEqual(HOP_MS);
   });
-  it('books @skip(if: $s) with s=true: 4 calls, median < 145 ms', async () => {
+  it('books @skip(if: $s) with s=true: 4 calls, fastest < 145 ms', async () => {
     await expectCalls('EB6_VAR_T', EB6_VAR, { s: true }, 4, R_EB1);
-    expect(t('EB6_VAR_T').median).toBeLessThan(HOP_MS);
+    expect(t('EB6_VAR_T').fastest).toBeLessThan(HOP_MS);
   });
 });
 
 describe('EB7 - a count root hidden in a root fragment keeps the prefetch', () => {
-  it('query { A ... on Query { authors(first:2){ totalCount } } }: 4 calls, median < 145 ms', async () => {
+  it('query { A ... on Query { authors(first:2){ totalCount } } }: 4 calls, fastest < 145 ms', async () => {
     await expectCalls('EB7', EB7, undefined, 4, R_EB1);
-    expect(t('EB7').median).toBeLessThan(HOP_MS);
+    expect(t('EB7').fastest).toBeLessThan(HOP_MS);
   });
 });
 
 describe('EB8 - multiple list roots', () => {
-  it('two count/cursor list roots: 5 calls (/authors x2), median < 145 ms', async () => {
+  it('two count/cursor list roots: 5 calls (/authors x2), fastest < 145 ms', async () => {
     await expectCalls('EB8_OK', EB8_OK, undefined, 5, R_EB8);
-    expect(t('EB8_OK').median).toBeLessThan(HOP_MS);
+    expect(t('EB8_OK').fastest).toBeLessThan(HOP_MS);
   });
-  it('if either list root selects books, it refuses: 5 calls, median >= 145 ms', async () => {
+  it('if either list root selects books, it refuses: 5 calls, fastest >= 145 ms', async () => {
     await expectCalls('EB8_REFUSE', EB8_REFUSE, undefined, 5, R_EB8);
-    expect(t('EB8_REFUSE').median).toBeGreaterThanOrEqual(HOP_MS);
+    expect(t('EB8_REFUSE').fastest).toBeGreaterThanOrEqual(HOP_MS);
   });
 });
 
@@ -294,7 +297,7 @@ describe('EB9 - the Book.author gate shares the rule', () => {
 });
 
 describe('EB10 - other refusals unchanged', () => {
-  it('{ A __schema { queryType { name } } }: 3 calls, median >= 145 ms', async () => {
+  it('{ A __schema { queryType { name } } }: 3 calls, fastest >= 145 ms', async () => {
     const tm = t('EB10_SCHEMA');
     const { body, stats } = await measured(gw, EB10_SCHEMA);
     expect(body.errors).toBeUndefined();
@@ -302,14 +305,14 @@ describe('EB10 - other refusals unchanged', () => {
     expect(stats.byRoute).toEqual(R_A_ONLY);
     expect((body.data?.__schema as { queryType: { name: string } }).queryType.name).toBe('Query');
     expect(tm.totals).toEqual([3, 3, 3, 3, 3]);
-    expect(tm.median).toBeGreaterThanOrEqual(HOP_MS);
+    expect(tm.fastest).toBeGreaterThanOrEqual(HOP_MS);
   });
   for (const key of ['EB10_NAIVE_EB1', 'EB10_NAIVE_EB2'] as const) {
-    it(`${key}: NAIVE loaders, no errors, median >= 145 ms (no prefetch with cache off)`, () => {
+    it(`${key}: NAIVE loaders, no errors, fastest >= 145 ms (no prefetch with cache off)`, () => {
       const tm = t(key);
       expect(tm.last.errors).toBeUndefined();
       expect(tm.last.data).toBeTruthy();
-      expect(tm.median).toBeGreaterThanOrEqual(HOP_MS);
+      expect(tm.fastest).toBeGreaterThanOrEqual(HOP_MS);
     });
   }
 });

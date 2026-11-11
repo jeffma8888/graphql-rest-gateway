@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1276%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -353,7 +353,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1276 tests across 53 files (Vitest), all green:
+`npm test` — 1326 tests across 54 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -375,6 +375,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Count-only list roots keep the lookahead** (`test_iter81_behavior.test.ts`): `authors` roots that never select `books`/`reviews` (count, names, pageInfo, cursors; fragments and `@skip`/`@include` honoured) keep the by-id prefetch at 2 serial hops and the same calls, while a list that reaches `books` still refuses with `/books/by-author` called once.
 - **Cost-model docs truth** (`test_iter82_behavior.test.ts`): the §7 cost bullet, the §9 design note and the complexity rule's doc comment are checked against the runtime pricer. Each query the README prints is posted verbatim and must cost the printed figure, and the unbounded-versus-bounded admission cases are re-run against a wide stub.
 - **Bulk book hydration** (`test_iter83_behavior.test.ts`): `books(ids:)` keeps id order and duplicates, returns `null` plus a per-item `NOT_FOUND` for unknown ids, sends 15 ids as 1 `/books/by-ids` call (15 under NAIVE), refuses 101 ids with `BAD_ARGUMENT`, and is priced `1 + n × subtree` for literal and variable lists.
+- **Load-tolerant latency guards** (`test_iter84_behavior.test.ts`): the serial-hop and fragment-walk timing tests compare the fastest of several runs to their bound. The backend sleeps a fixed latency per call, so a run can never beat the true hop count, and host CPU contention only adds time. Every non-timing assertion still runs on every run, and the pinned bounds and call counts are checked against the previous release.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

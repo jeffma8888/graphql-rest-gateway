@@ -73,7 +73,13 @@ async function measured(
   return { body, stats };
 }
 
-async function medianMs(gw: Gateway, query: string): Promise<number> {
+/**
+ * Fastest of 5 timed sequential requests after 1 untimed warm-up. WHY the minimum:
+ * the bundled backend sleeps latencyMs inside every handler, so a k-hop path can
+ * never beat k x latencyMs (a hop regression still fails), while host CPU
+ * contention only ever adds time (a loaded host cannot turn it red).
+ */
+async function fastestMs(gw: Gateway, query: string): Promise<number> {
   await gql(gw, query); // warm-up
   const samples: number[] = [];
   for (let i = 0; i < 5; i++) {
@@ -82,8 +88,7 @@ async function medianMs(gw: Gateway, query: string): Promise<number> {
     samples.push(performance.now() - t0);
     expect(body.errors).toBeUndefined();
   }
-  samples.sort((a, b) => a - b);
-  return samples[2]!;
+  return Math.min(...samples);
 }
 
 const rejections: unknown[] = [];
@@ -151,11 +156,11 @@ describe('EB1 - deep author keeps the same call count and data', () => {
 });
 
 describe('EB2 - deep author is faster at latencyMs 50', () => {
-  it('median of 5 runs is < 125 ms (HEAD needs >= 150 ms for 3 serial calls)', async () => {
+  it('fastest of 5 runs is < 125 ms (HEAD needs >= 150 ms for 3 serial calls)', async () => {
     const { stats } = await measured(slow, slowBase, DEEP_AUTHOR);
     expect(stats.total).toBe(3);
-    const median = await medianMs(slow, DEEP_AUTHOR);
-    expect(median).toBeLessThan(125);
+    const fastest = await fastestMs(slow, DEEP_AUTHOR);
+    expect(fastest).toBeLessThan(125);
   });
 });
 
@@ -170,9 +175,9 @@ describe('EB3 - book reviews: same count, faster', () => {
     expect(stats.byRoute).toEqual({ '/books/by-ids': 1, '/reviews/by-book': 1 });
   });
 
-  it('median of 5 runs at latencyMs 50 is < 80 ms', async () => {
-    const median = await medianMs(slow, BOOK_REVIEWS);
-    expect(median).toBeLessThan(80);
+  it('fastest of 5 runs at latencyMs 50 is < 80 ms', async () => {
+    const fastest = await fastestMs(slow, BOOK_REVIEWS);
+    expect(fastest).toBeLessThan(80);
   });
 });
 
@@ -181,15 +186,15 @@ describe('EB4 - fragments keep the speedup', () => {
     ['named fragment', NAMED_FRAG, PLAIN_NAMED_EQ],
     ['inline fragment', INLINE_FRAG, PLAIN_INLINE_EQ],
   ] as const) {
-    it(`${name}: 2 calls, same data as plain-field form, median < 80 ms`, async () => {
+    it(`${name}: 2 calls, same data as plain-field form, fastest < 80 ms`, async () => {
       const { body, stats } = await measured(batched, base, query);
       expect(body.errors).toBeUndefined();
       expect(stats.total).toBe(2);
       expect(stats.byRoute).toEqual({ '/authors/by-ids': 1, '/books/by-author': 1 });
       const plainBody = await gql(batched, plain);
       expect(body.data).toEqual(plainBody.data);
-      const median = await medianMs(slow, query);
-      expect(median).toBeLessThan(80);
+      const fastest = await fastestMs(slow, query);
+      expect(fastest).toBeLessThan(80);
     });
   }
 });

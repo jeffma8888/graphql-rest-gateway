@@ -81,7 +81,13 @@ async function measured(
   return { body, stats };
 }
 
-async function medianMs(gw: Gateway, query: string, variables?: Record<string, unknown>): Promise<number> {
+/**
+ * Fastest of 5 timed sequential requests after 1 untimed warm-up. WHY the minimum:
+ * the bundled backend sleeps latencyMs inside every handler, so a k-hop path can
+ * never beat k x latencyMs (a hop regression still fails), while host CPU
+ * contention only ever adds time (a loaded host cannot turn it red).
+ */
+async function fastestMs(gw: Gateway, query: string, variables?: Record<string, unknown>): Promise<number> {
   await gql(gw, query, variables); // warm-up
   const samples: number[] = [];
   for (let i = 0; i < 5; i++) {
@@ -89,8 +95,7 @@ async function medianMs(gw: Gateway, query: string, variables?: Record<string, u
     await gql(gw, query, variables);
     samples.push(performance.now() - t0);
   }
-  samples.sort((a, b) => a - b);
-  return samples[2]!;
+  return Math.min(...samples);
 }
 
 const rejections: unknown[] = [];
@@ -157,8 +162,8 @@ describe('EB2 - one serial hop less at 50 ms latency', () => {
     ['S20', S20, 185], // HEAD ~212
   ];
   for (const [name, q, bound] of cases) {
-    it(`${name} median < ${bound} ms`, async () => {
-      const ms = await medianMs(slow, q);
+    it(`${name} fastest < ${bound} ms`, async () => {
+      const ms = await fastestMs(slow, q);
       expect(ms).toBeLessThan(bound);
     });
   }
@@ -215,12 +220,12 @@ describe('EB4 - gate flattens root fragments and __typename (iter-76 re-land of 
     ['root named fragment', ROOT_FRAG],
     ['root __typename', ROOT_TYPENAME],
   ] as const) {
-    it(`${name}: 3 calls and median < 145 ms (2 hops, iter-76 flattening)`, async () => {
+    it(`${name}: 3 calls and fastest < 145 ms (2 hops, iter-76 flattening)`, async () => {
       const { body, stats } = await measured(gw, base, q);
       expect(body.errors).toBeUndefined();
       expect(stats.total).toBe(3);
       expect(stats.byRoute).toEqual({ '/books/by-ids': 1, '/authors/by-ids': 1, '/books/by-author': 1 });
-      expect(await medianMs(slow, q)).toBeLessThan(145);
+      expect(await fastestMs(slow, q)).toBeLessThan(145);
     });
   }
 
@@ -267,12 +272,12 @@ describe('EB5 - child selection is honoured', () => {
     ['inline fragment on Author', '{ book(id:"a1-b1"){ author{ ... on Author { books{ id } } } } }'],
   ];
   for (const [name, q] of viaFragment) {
-    it(`${name}: 3 calls and median < 135 ms`, async () => {
+    it(`${name}: 3 calls and fastest < 135 ms`, async () => {
       const { body, stats } = await measured(gw, base, q);
       expect(body.errors).toBeUndefined();
       expect(stats.total).toBe(3);
       expect(stats.byRoute).toEqual({ '/books/by-ids': 1, '/authors/by-ids': 1, '/books/by-author': 1 });
-      expect(await medianMs(slow, q)).toBeLessThan(135);
+      expect(await fastestMs(slow, q)).toBeLessThan(135);
     });
   }
 });
@@ -413,12 +418,12 @@ describe('EB8 - call budget (100 ms settle)', () => {
 
 // ---------- EB9 ----------
 describe('EB9 - NAIVE and batching', () => {
-  it('NAIVE: S1 makes 3 calls with a median >= 145 ms (no prefetch with the cache off)', async () => {
+  it('NAIVE: S1 makes 3 calls with a fastest >= 145 ms (no prefetch with the cache off)', async () => {
     const { body, stats } = await measured(naive, base, S1);
     expect(body.errors).toBeUndefined();
     expect(stats.total).toBe(3);
     const slowNaive = createGateway({ restBaseUrl: slowBase, loaderOptions: NAIVE });
-    expect(await medianMs(slowNaive, S1)).toBeGreaterThanOrEqual(145);
+    expect(await fastestMs(slowNaive, S1)).toBeGreaterThanOrEqual(145);
   });
 
   it('maxBatchSize 5: [S1, S1, a2-b1 author books] -> 3 elements, no errors, 3 calls, data equals solo runs', async () => {

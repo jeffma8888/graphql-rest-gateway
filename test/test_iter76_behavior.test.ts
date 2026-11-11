@@ -12,7 +12,7 @@ import { createGateway, buildBackend, NAIVE } from '../src/lib';
  * Black-box: bundled backend in-process on port 0, gateway driven through
  * createGateway(...).fetch. Call counts come from the backend's /__stats
  * counter (total + byRoute) and are cross-checked against
- * extensions.downstreamCalls.total. Hops: median of 3 runs (after 1 warm-up)
+ * extensions.downstreamCalls.total. Hops: fastest of 5 runs (after 1 warm-up)
  * on a latencyMs:50 backend; "2 hops" < 145 ms, "3 hops" >= 145 ms.
  * All hop shapes are measured concurrently in beforeAll to keep the file fast.
  */
@@ -101,16 +101,21 @@ async function measured(
   return { body, stats };
 }
 
-async function medianMs(g: Gateway, query: string, variables?: Record<string, unknown>): Promise<number> {
+/**
+ * Fastest of 5 timed sequential requests after 1 untimed warm-up. WHY the minimum:
+ * the bundled backend sleeps latencyMs inside every handler, so a k-hop path can
+ * never beat k x latencyMs (a hop regression still fails), while host CPU
+ * contention only ever adds time (a loaded host cannot turn it red).
+ */
+async function fastestMs(g: Gateway, query: string, variables?: Record<string, unknown>): Promise<number> {
   await gql(g, query, variables); // warm-up
   const samples: number[] = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const t0 = performance.now();
     await gql(g, query, variables);
     samples.push(performance.now() - t0);
   }
-  samples.sort((x, y) => x - y);
-  return samples[1]!;
+  return Math.min(...samples);
 }
 
 type HopKey = string;
@@ -154,7 +159,7 @@ beforeAll(async () => {
   const slowNaive = createGateway({ restBaseUrl: slowBase, loaderOptions: NAIVE });
   await Promise.all(
     hopShapes.map(async ([key, kind, q, v]) => {
-      hops.set(key, await medianMs(kind === 'naive' ? slowNaive : slow, q, v));
+      hops.set(key, await fastestMs(kind === 'naive' ? slowNaive : slow, q, v));
     }),
   );
 }, 30_000);

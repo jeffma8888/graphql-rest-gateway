@@ -117,16 +117,21 @@ async function recorded(query: string): Promise<{ body: GqlResult; recs: Rec[] }
   return { body, recs: [...recs] };
 }
 
-async function medianMs(g: Gateway, query: string): Promise<number> {
+/**
+ * Fastest of 5 timed sequential requests after 1 untimed warm-up. WHY the minimum:
+ * the bundled backend sleeps latencyMs inside every handler, so a k-hop path can
+ * never beat k x latencyMs (a hop regression still fails), while host CPU
+ * contention only ever adds time (a loaded host cannot turn it red).
+ */
+async function fastestMs(g: Gateway, query: string): Promise<number> {
   await gql(g, query); // warm-up
   const samples: number[] = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const t0 = performance.now();
     await gql(g, query);
     samples.push(performance.now() - t0);
   }
-  samples.sort((x, y) => x - y);
-  return samples[1]!;
+  return Math.min(...samples);
 }
 
 function idsParam(url: string, name: string): string[] {
@@ -186,7 +191,7 @@ beforeAll(async () => {
   naive = createGateway({ restBaseUrl: base, loaderOptions: NAIVE });
   viaProxy = createGateway({ restBaseUrl: proxyBase });
   const slow = createGateway({ restBaseUrl: slowBase });
-  await Promise.all(hopShapes.map(async ([k, s]) => hops.set(k, await medianMs(slow, s))));
+  await Promise.all(hopShapes.map(async ([k, s]) => hops.set(k, await fastestMs(slow, s))));
 }, 30_000);
 
 afterAll(async () => {

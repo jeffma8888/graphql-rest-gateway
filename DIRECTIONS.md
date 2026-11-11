@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-84
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Ordered nested lists: `Author.books(first, orderBy: BookOrder)` / `Book.reviews(first, orderBy: ReviewOrder)`, sorted after the one batched fetch
+    - Candidate A2 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!` — the author twin of the shipped `books(ids:)`
+    - Candidate A3 -- Filtered nested list: `Book.reviews(minRating: Int)`, applied after the one batched fetch and before `first`
+    - Candidate B1 -- A by-id key that the REST list syntax cannot carry verbatim (it contains `,`, or is empty or padded) resolves `NOT_FOUND` at 0 downstream calls, instead of smuggling a whole batch past the 100-id cap and the cost model
+    - Candidate B2 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE` for clients and `onDownstreamCall` (row 54, behaviour half, no byte cap)
+    - Candidate B3 -- The suite runs green outside a git checkout and catches a COMMITTED weakening of the N+1 test: replace the 5 git-HEAD pins on `test/n-plus-1.test.ts` / `test/` with the one content guard that already exists (row 77)
+    winner: A1
+    ship: pending (not yet decided)
   iter-83
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §7 "Request batching" promises a batch costs "the same as one merged query", but a mixed by-id + list batch costs 4 calls against the merged 3, and `maxDownstreamCalls: 3` refuses the batch while it admits the merged op. Disclose it and pin it with a prose==oracle test
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Variable-driven bulk lookup `Query.books(ids: [ID!]!): [Book]!` (order-preserving, `null` + per-item `NOT_FOUND` for a missing id, max 100 ids, priced by list length), one downstream call through the existing by-id loader
     - Candidate B3 -- Aggregate fields `Book.reviewCount: Int!`, `Book.averageRating: Float` and `Author.bookCount: Int!`, computed from the already-batched child lists at 0 extra downstream calls
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED e651602
   iter-82
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Batch-wide lookahead gate: a mixed opt-in HTTP batch `[author(id){books}, authors{…books}]` costs the merged operation's 3 calls, not 4 (row 44)
@@ -501,4 +511,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-50 scouted iterations
+51 scouted iterations

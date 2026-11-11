@@ -12,7 +12,7 @@ import { NAIVE } from '../src/gateway/loaders';
  * Black-box: the bundled backend runs in-process on port 0 and the gateway is
  * driven through createGateway(...).fetch. Every call count is read from the
  * backend's own /__stats counter (total + byRoute) and cross-checked against
- * the response's extensions.downstreamCalls.total. Latency is the median of 5
+ * the response's extensions.downstreamCalls.total. Latency is the fastest of 5
  * timed requests after 1 warm-up against a backend with latencyMs: 50.
  */
 
@@ -84,7 +84,13 @@ async function measured(
   return { body, stats };
 }
 
-async function medianMs(gw: Gateway, query: string): Promise<number> {
+/**
+ * Fastest of 5 timed sequential requests after 1 untimed warm-up. WHY the minimum:
+ * the bundled backend sleeps latencyMs inside every handler, so a k-hop path can
+ * never beat k x latencyMs (a hop regression still fails), while host CPU
+ * contention only ever adds time (a loaded host cannot turn it red).
+ */
+async function fastestMs(gw: Gateway, query: string): Promise<number> {
   await gql(gw, query); // warm-up
   const samples: number[] = [];
   for (let i = 0; i < 5; i++) {
@@ -93,8 +99,7 @@ async function medianMs(gw: Gateway, query: string): Promise<number> {
     samples.push(performance.now() - t0);
     expect(body.errors).toBeUndefined();
   }
-  samples.sort((x, y) => x - y);
-  return samples[2]!;
+  return Math.min(...samples);
 }
 
 const settle = (ms = 30): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -162,8 +167,8 @@ describe('EB1 - two aliased authors', () => {
     expect(a.books.length).toBeGreaterThan(0);
     expect(b.books.length).toBeGreaterThan(0);
   });
-  it('median < 85 ms at 50 ms latency (HEAD ~110 ms)', async () => {
-    expect(await medianMs(slow, TWO_AUTHORS)).toBeLessThan(85);
+  it('fastest < 85 ms at 50 ms latency (HEAD ~110 ms)', async () => {
+    expect(await fastestMs(slow, TWO_AUTHORS)).toBeLessThan(85);
   });
 });
 
@@ -172,8 +177,8 @@ describe('EB2 - five aliased authors', () => {
     const body = await expectShape(FIVE_AUTHORS, 2, { '/authors/by-ids': 1, '/books/by-author': 1 });
     expect(Object.keys(body.data ?? {}).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
-  it('median < 85 ms', async () => {
-    expect(await medianMs(slow, FIVE_AUTHORS)).toBeLessThan(85);
+  it('fastest < 85 ms', async () => {
+    expect(await fastestMs(slow, FIVE_AUTHORS)).toBeLessThan(85);
   });
 });
 
@@ -186,8 +191,8 @@ describe('EB3 - author + book roots', () => {
       '/reviews/by-book': 1,
     });
   });
-  it('median < 85 ms (HEAD ~111 ms)', async () => {
-    expect(await medianMs(slow, AUTHOR_BOOK)).toBeLessThan(85);
+  it('fastest < 85 ms (HEAD ~111 ms)', async () => {
+    expect(await fastestMs(slow, AUTHOR_BOOK)).toBeLessThan(85);
   });
 });
 
@@ -196,8 +201,8 @@ describe('EB4 - three book roots', () => {
     const body = await expectShape(THREE_BOOKS, 2, { '/books/by-ids': 1, '/reviews/by-book': 1 });
     expect(Object.keys(body.data ?? {}).sort()).toEqual(['a', 'b', 'c']);
   });
-  it('median < 85 ms', async () => {
-    expect(await medianMs(slow, THREE_BOOKS)).toBeLessThan(85);
+  it('fastest < 85 ms', async () => {
+    expect(await fastestMs(slow, THREE_BOOKS)).toBeLessThan(85);
   });
 });
 
@@ -210,8 +215,8 @@ describe('EB5 - deep mix keeps its count and loses one hop', () => {
       '/reviews/by-book': 2,
     });
   });
-  it('median < 135 ms (HEAD ~158 ms)', async () => {
-    expect(await medianMs(slow, DEEP_MIX)).toBeLessThan(135);
+  it('fastest < 135 ms (HEAD ~158 ms)', async () => {
+    expect(await fastestMs(slow, DEEP_MIX)).toBeLessThan(135);
   });
 });
 
@@ -317,11 +322,11 @@ describe('EB11 - no-cache modes never prefetch', () => {
     const c = await measured(noCache, base, AUTHOR_BOOK);
     expect(c.stats.total).toBe(4);
   });
-  it('EB1 query median >= 95 ms in both modes (still the waterfall)', async () => {
+  it('EB1 query fastest >= 95 ms in both modes (still the waterfall)', async () => {
     const slowNaive = createGateway({ restBaseUrl: slowBase, loaderOptions: NAIVE });
     const slowNoCache = createGateway({ restBaseUrl: slowBase, loaderOptions: { batch: true, cache: false } });
-    expect(await medianMs(slowNaive, TWO_AUTHORS)).toBeGreaterThanOrEqual(95);
-    expect(await medianMs(slowNoCache, TWO_AUTHORS)).toBeGreaterThanOrEqual(95);
+    expect(await fastestMs(slowNaive, TWO_AUTHORS)).toBeGreaterThanOrEqual(95);
+    expect(await fastestMs(slowNoCache, TWO_AUTHORS)).toBeGreaterThanOrEqual(95);
   });
 });
 
