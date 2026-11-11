@@ -434,9 +434,21 @@ describe('EB9 - unchanged surfaces', () => {
   });
 
   // SDL + generated types dropped from the list at iter-71 (Relay `last`/`before` args);
-  // datasources dropped at iter-73 (2xx bodies checked against the REST contract).
-  it('loaders are unmodified', () => {
-    const out = headPorcelain(['src/gateway/loaders.ts']);
+  // datasources dropped at iter-73 (2xx bodies checked against the REST contract);
+  // loaders re-pinned at iter-85 (unsendable by-id keys filtered in loaders.ts) from
+  // "working tree vs HEAD" to "the iter-69 commit vs its parent".
+  it('loaders are unmodified by the iter-69 commit', () => {
+    const iter69 = 'fa5fc8e014d51d0efa288e182335a10bfcac8c0e';
+    let out: string | null;
+    try {
+      out = execFileSync('git', ['diff', '--name-only', `${iter69}~1`, iter69, '--', 'src/gateway/loaders.ts'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      out = null; // not a git checkout, or a shallow clone without the commit
+    }
     if (out !== null) expect(out.trim()).toBe('');
   });
 

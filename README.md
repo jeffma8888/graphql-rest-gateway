@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1355%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -313,6 +313,8 @@ Admission runs cheapest check first, so a hostile document is refused quickly in
 ### Partial errors & null propagation
 Root-level `Query.author` and `Query.book` return structured NOT_FOUND errors when the requested id does not exist: `data.author: null` (or `data.book: null`) plus an entry in `errors[]` with `extensions: { code: "NOT_FOUND", id: "<requested-id>" }`, letting clients correlate exactly which entity was missing. Back-edge resolvers (`Book.author`, `Review.book`) follow the same pattern for non-null fields — a missing referenced entity throws a `GraphQLError` (`code: NOT_FOUND`), which triggers GraphQL's standard null-propagation: the error surfaces in `errors[]` and null bubbles to the nearest nullable parent rather than corrupting the response. DataLoaders return `null` for a missing single-entity key (never throw at the batch level), so a bad id degrades gracefully.
 
+**Unsendable ids never leave the gateway.** A by-id key that is empty, contains a comma, has leading or trailing whitespace, or is longer than 256 characters (`MAX_ID_LENGTH` in `src/gateway/loaders.ts`) cannot travel as exactly one id in the REST `?ids=a,b` list, so it is never sent downstream: it resolves `NOT_FOUND` (with `extensions.id` echoing the input verbatim) with 0 downstream calls for that key, and it does not affect the other ids batched with it. `book(id:"a1-b1,a1-b2")` is `NOT_FOUND` at 0 calls instead of smuggling 2 ids past the 100-id cap, and `books(ids:["a1-b1","a2-b1",<20 000-char id>])` sends one `/books/by-ids?ids=a1-b1,a2-b1` call and returns both rows plus `null` at index 2, instead of a 431 that would fail all three.
+
 ### Downstream timeout
 Every outbound REST call is guarded by a per-request deadline (`downstreamTimeoutMs`, default 30 s). If the downstream service does not respond in time, the call aborts and the resolver surfaces a typed error (`extensions.code = DOWNSTREAM_TIMEOUT`). Configure the timeout via the `downstreamTimeoutMs` option in `createGateway` / `createContext`.
 
@@ -353,7 +355,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1326 tests across 54 files (Vitest), all green:
+`npm test` — 1355 tests across 55 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -376,6 +378,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Cost-model docs truth** (`test_iter82_behavior.test.ts`): the §7 cost bullet, the §9 design note and the complexity rule's doc comment are checked against the runtime pricer. Each query the README prints is posted verbatim and must cost the printed figure, and the unbounded-versus-bounded admission cases are re-run against a wide stub.
 - **Bulk book hydration** (`test_iter83_behavior.test.ts`): `books(ids:)` keeps id order and duplicates, returns `null` plus a per-item `NOT_FOUND` for unknown ids, sends 15 ids as 1 `/books/by-ids` call (15 under NAIVE), refuses 101 ids with `BAD_ARGUMENT`, and is priced `1 + n × subtree` for literal and variable lists.
 - **Load-tolerant latency guards** (`test_iter84_behavior.test.ts`): the serial-hop and fragment-walk timing tests compare the fastest of several runs to their bound. The backend sleeps a fixed latency per call, so a run can never beat the true hop count, and host CPU contention only adds time. Every non-timing assertion still runs on every run, and the pinned bounds and call counts are checked against the previous release.
+- **Unsendable by-id keys** (`test_iter85_behavior.test.ts`): empty, comma-joined, padded and over-256-character ids resolve `NOT_FOUND` at 0 downstream calls on single roots, the lookahead prefetch and `books(ids:)`, while honest ids in the same batch keep their data in exactly 1 call (2 under NAIVE) and the nested N+1 query stays at 3/21 calls.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

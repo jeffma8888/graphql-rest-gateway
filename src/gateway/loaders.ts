@@ -48,33 +48,72 @@ function groupBy<T>(
   key: (row: T) => string,
 ): T[][] {
   const groups = new Map<string, T[]>();
-  for (const k of keys) groups.set(k, []);
+  // Only keys that were actually sent get a group: a row keyed to an unsendable
+  // key was never requested, so that key stays `[]` whatever the backend says.
+  for (const k of keys) if (isSendableKey(k)) groups.set(k, []);
   for (const row of rows) groups.get(key(row))?.push(row);
   return keys.map((k) => groups.get(k) ?? []);
 }
 
+/**
+ * Longest id the gateway forwards downstream, counted in UTF-16 code units
+ * (`String.length`), not encoded bytes. WHY: every by-id key lands in a URL
+ * query string, and one oversized key would get the whole batched request
+ * refused (431), failing every honest key DataLoader put beside it.
+ * This bounds a SINGLE key only: the aggregate batched URL is not bounded
+ * (e.g. 100 sendable ids x 256 chars can exceed a 16 KiB request line).
+ */
+export const MAX_ID_LENGTH = 256;
+
+/**
+ * True when the REST list syntax (`?ids=a,b`) carries `key` as exactly ONE id:
+ * not empty, no `,` (which would smuggle extra ids past the 100-id cap and the
+ * cost model), no leading/trailing whitespace (the backend trims, so a padded
+ * key would match a different row), and at most MAX_ID_LENGTH chars. Any other
+ * key is never sent; it resolves as missing, which the resolvers turn into the
+ * usual NOT_FOUND.
+ */
+export function isSendableKey(key: string): boolean {
+  return key.length > 0 && key.length <= MAX_ID_LENGTH && !key.includes(',') && key.trim() === key;
+}
+
+/**
+ * Calls `fetch` with only the sendable keys, and skips the call entirely when
+ * none are left, so an all-unsendable batch costs 0 downstream requests.
+ * Callers still map results over ALL keys; a filtered key just finds no row.
+ */
+async function fetchSendable<T>(
+  keys: ReadonlyArray<string>,
+  fetch: (keys: ReadonlyArray<string>) => Promise<T[]>,
+): Promise<T[]> {
+  const sendable = keys.filter(isSendableKey);
+  return sendable.length > 0 ? fetch(sendable) : [];
+}
+
 export function buildLoaders(ds: DataSources, options: LoaderOptions = BATCHED): Loaders {
   const authorById = new DataLoader<string, AuthorRow | null>(async (ids) => {
-    const rows = await ds.author.authorsByIds(ids);
+    const rows = await fetchSendable(ids, (ok) => ds.author.authorsByIds(ok));
     const byId = indexBy(rows, (r) => r.id);
     // Contract: return exactly one value per key, in the same order.
-    return ids.map((id) => byId.get(id) ?? null);
+    // A key that was never sent is missing even if a misbehaving backend
+    // returns a row with that exact id.
+    return ids.map((id) => (isSendableKey(id) ? byId.get(id) ?? null : null));
   }, options);
 
   const bookById = new DataLoader<string, BookRow | null>(async (ids) => {
-    const rows = await ds.book.booksByIds(ids);
+    const rows = await fetchSendable(ids, (ok) => ds.book.booksByIds(ok));
     const byId = indexBy(rows, (r) => r.id);
-    return ids.map((id) => byId.get(id) ?? null);
+    return ids.map((id) => (isSendableKey(id) ? byId.get(id) ?? null : null));
   }, options);
 
   const booksByAuthorId = new DataLoader<string, BookRow[]>(async (authorIds) => {
-    const rows = await ds.book.booksByAuthorIds(authorIds);
+    const rows = await fetchSendable(authorIds, (ok) => ds.book.booksByAuthorIds(ok));
     for (const book of rows) bookById.prime(book.id, book);
     return groupBy(authorIds, rows, (b) => b.authorId);
   }, options);
 
   const reviewsByBookId = new DataLoader<string, ReviewRow[]>(async (bookIds) => {
-    const rows = await ds.review.reviewsByBookIds(bookIds);
+    const rows = await fetchSendable(bookIds, (ok) => ds.review.reviewsByBookIds(ok));
     return groupBy(bookIds, rows, (r) => r.bookId);
   }, options);
 

@@ -515,14 +515,20 @@ describe('EB10 - static guard: one walker', () => {
 // ---------- EB11 ----------
 describe('EB11 - no downstream or loader change', () => {
   // schema.graphql dropped from the list at iter-71 (Relay `last`/`before` SDL args);
-  // datasources dropped at iter-73 (2xx bodies checked against the REST contract).
-  it('loaders are unmodified relative to HEAD', () => {
-    const paths = ['src/gateway/loaders.ts'];
+  // datasources dropped at iter-73 (2xx bodies checked against the REST contract);
+  // re-pinned at iter-85 (unsendable by-id keys filtered in loaders.ts) from
+  // "working tree vs HEAD" to "the iter-68 commit vs its parent".
+  it('loaders are unmodified by the iter-68 commit', () => {
+    const iter68 = '8245c8171bc1e723190aaab848d1b95dc86fbf61';
     let out: string;
     try {
-      out = execFileSync('git', ['status', '--porcelain', '--', ...paths], { cwd: root, encoding: 'utf8' });
+      out = execFileSync('git', ['diff', '--name-only', `${iter68}~1`, iter68, '--', 'src/gateway/loaders.ts'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
     } catch {
-      // Not a git checkout (e.g. a tarball); nothing to compare against.
+      // Not a git checkout (e.g. a tarball) or a shallow clone; nothing to compare against.
       return;
     }
     expect(out.trim()).toBe('');

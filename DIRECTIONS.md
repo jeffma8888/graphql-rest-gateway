@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-85
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- By-id keys the REST list syntax cannot carry safely (contain `,`, are empty or padded, or exceed a length cap) resolve per-item `NOT_FOUND` at 0 downstream calls, instead of smuggling a batch past the 100-id cap or poisoning their honest siblings (row 83, widened)
+    - Candidate A2 -- Admission skips what execution skips: complexity and depth honour `@skip`/`@include`, literal and variable alike, so the Apollo/Relay conditional-field idiom is priced by what runs (row 69)
+    - Candidate A3 -- The quality gate is green outside a git checkout and catches a COMMITTED weakening of the N+1 test: one content guard replaces the git-HEAD pins on `test/n-plus-1.test.ts` (row 77)
+    - Candidate B1 -- The SDL contract can be imported by name from the installed package: `exports` gains `./schema.graphql` + `./package.json`, and the entry re-exports a realm-free `typeDefs` string (row 52)
+    - Candidate B2 -- CI enforces the stated quality bar: the workflow runs `npm run typecheck` and `npm run benchmark -- --threshold 3`, and the benchmark exits 2 on an unknown or malformed flag (row 53)
+    - Candidate B3 -- The operator CLI consults the shipped `onDownstreamCall` hook: `LOG_DOWNSTREAM_CALLS=json` makes `npm start` / `npx graphql-rest-gateway` write one JSON line per downstream REST call to stderr
+    winner: A1
+    ship: pending (not yet decided)
   iter-84
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Ordered nested lists: `Author.books(first, orderBy: BookOrder)` / `Book.reviews(first, orderBy: ReviewOrder)`, sorted after the one batched fetch
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE` for clients and `onDownstreamCall` (row 54, behaviour half, no byte cap)
     - Candidate B3 -- The suite runs green outside a git checkout and catches a COMMITTED weakening of the N+1 test: replace the 5 git-HEAD pins on `test/n-plus-1.test.ts` / `test/` with the one content guard that already exists (row 77)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 68bf329
   iter-83
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §7 "Request batching" promises a batch costs "the same as one merged query", but a mixed by-id + list batch costs 4 calls against the merged 3, and `maxDownstreamCalls: 3` refuses the batch while it admits the merged op. Disclose it and pin it with a prose==oracle test
@@ -511,4 +521,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-51 scouted iterations
+52 scouted iterations

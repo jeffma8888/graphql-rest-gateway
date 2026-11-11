@@ -503,10 +503,10 @@ describe('EB11 - frozen surface', () => {
 
   // services, SDL and generated types dropped from the list at iter-71 (Relay `last`/`before`);
   // datasources dropped at iter-73 (2xx bodies checked against the REST contract);
-  // lib.ts dropped at iter-77 (type-only `DownstreamCallEvent` export).
-  it('loaders and n-plus-1 are unmodified', () => {
+  // lib.ts dropped at iter-77 (type-only `DownstreamCallEvent` export);
+  // loaders.ts dropped at iter-85 (unsendable by-id keys filtered before any URL).
+  it('n-plus-1 is unmodified', () => {
     const out = porcelain([
-      'src/gateway/loaders.ts',
       'test/n-plus-1.test.ts',
     ]);
     if (out !== null) expect(out.trim()).toBe('');
