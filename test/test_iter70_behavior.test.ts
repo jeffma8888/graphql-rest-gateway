@@ -486,7 +486,9 @@ describe('EB10 - docs', () => {
     const before = paragraph(headReadme);
     const now = paragraph(README);
     // iter-76 (re-land of iter-75) deliberately retired the sentence saying a root-level fragment or root __typename disables the prefetch.
-    const kept = before.split(/(?<=\.)\s+(?=[A-Z`*])/).filter((s) => !s.includes('a root-level fragment (named or inline)'));
+    // iter-87 (PRODUCT row 86) deliberately retired the sentence saying a `books(ids:)` root turns the prefetch off.
+    const retired = ['a root-level fragment (named or inline)', 'bulk-lookup root turns the prefetch off'];
+    const kept = before.split(/(?<=\.)\s+(?=[A-Z`*])/).filter((s) => !retired.some((r) => s.includes(r)));
     for (const s of kept) expect(now).toContain(s);
   });
 });

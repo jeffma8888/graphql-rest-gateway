@@ -490,10 +490,13 @@ describe('EB12 - docs and nothing else moves', () => {
     expect(p).toMatch(/15 under NAIVE/);
   });
 
-  it('README lookahead paragraph says a books(ids:) root turns the prefetch off', () => {
+  // Deliberate re-pin (iter 87, PRODUCT row 86): the bulk root now joins the
+  // lookahead, so the paragraph must say it prefetches, not that it turns it off.
+  it('README lookahead paragraph says a books(ids:) root prefetches (iter-87 re-pin)', () => {
     const para = README.split(/\n\s*\n/).find((p) => p.includes('**Lookahead prefetch on by-id roots.**'));
     expect(para).toBeDefined();
-    expect(para!).toMatch(/`books\(ids:\)`[^.]*turns the prefetch off/);
+    expect(para!).not.toMatch(/`books\(ids:\)`[^.]*turns the prefetch off/);
+    expect(para!).toMatch(/`books\(ids:\)`[^.]*prefetches/);
   });
 
   it('README mentions BAD_ARGUMENT', () => {

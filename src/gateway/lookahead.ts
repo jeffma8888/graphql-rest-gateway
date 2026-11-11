@@ -13,14 +13,15 @@ import {
 /**
  * Lookahead for speculative child prefetch.
  *
- * WHY: on a by-id root (`author(id)`, `book(id)`) the key the child edge needs
- * (`author.id`, `book.id`) is already known from `args.id`, so the child's
- * batched load can start in the same tick as the root fetch instead of one
- * full downstream round trip later. `Book.author` reuses the same gate one
- * level down: `Author.books` needs `book.authorId`, already on the parent row,
- * so the author's books load can start alongside the author load. This module
- * only answers "will that child really be resolved, and is it safe to start
- * it early?"; it never fetches.
+ * WHY: on a by-id root (`author(id)`, `book(id)`, `books(ids)`) the key the
+ * child edge needs (`author.id`, `book.id`) is already known from `args.id`
+ * (or every entry of `args.ids`), so the child's batched load can start in the
+ * same tick as the root fetch instead of one full downstream round trip
+ * later. `Book.author` reuses the same gate one level down: `Author.books`
+ * needs `book.authorId`, already on the parent row, so the author's books
+ * load can start alongside the author load. This module only answers "will
+ * that child really be resolved, and is it safe to start it early?"; it never
+ * fetches.
  */
 
 /** Mirrors graphql-js execution: a node runs unless @skip(if:true) or @include(if:false). */
@@ -33,10 +34,11 @@ function isIncluded(
 }
 
 /**
- * Root fields whose child edge key is `args.id`, so their prefetch is known in tick 0.
+ * Root fields whose child edge keys are their id arguments (`args.id`, or each of
+ * `args.ids` for the `books(ids)` bulk root), so their prefetch is known in tick 0.
  * Keep in sync with the Query resolvers that call `willResolveChild` (resolvers.ts).
  */
-const BY_ID_ROOTS = new Set(['author', 'book']);
+const BY_ID_ROOTS = new Set(['author', 'book', 'books']);
 
 /**
  * Fields whose resolvers call the loaders the lookahead prefetches
@@ -73,11 +75,13 @@ function listRootReachesLoaders(info: GraphQLResolveInfo, set: SelectionSetNode 
 
 /**
  * True when every root field the operation will execute is a by-id root
- * (`author(id)`, `book(id)`, aliases included), `__typename`, or an `authors`
- * list root that never reaches the prefetched loaders. Root inline and
- * named fragments are flattened (cycle-guarded) and nodes excluded by
- * `@skip`/`@include` are ignored, because graphql-js `collectFields` merges them
- * into one field map and calls every Query root resolver in the same tick --
+ * (`author(id)`, `book(id)`, `books(ids)`, aliases included), `__typename`,
+ * or an `authors` list root that never reaches the prefetched loaders. A
+ * `books(ids)` root counts as one `book(id)` root per entry of `args.ids`: its
+ * keys are known in tick 0 too. Root inline and named fragments are
+ * flattened (cycle-guarded) and nodes excluded by `@skip`/`@include` are
+ * ignored, because graphql-js `collectFields` merges them into one field map
+ * and calls every Query root resolver in the same tick --
  * the same-tick argument rests on that flattened list, not on the spelling.
  * `__typename` runs no resolver or loader, so it cannot split a batch. An
  * `authors` list root (any alias, even hidden in a root fragment) is safe only

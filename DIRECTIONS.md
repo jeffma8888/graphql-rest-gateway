@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-87
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- One execute-phase result writer: fold `downstreamCallsPlugin` and `badUserInputPlugin` into `queryComplexityPlugin`, so each operation's result is rebuilt once instead of three times
+    - Candidate A2 -- Delete the dead validation-to-execute cache only: remove `ValidationResult`'s WeakMap get/set, both `-1` sentinels and server.ts's never-taken `cached` branch, and keep `depthLimit` and `complexityLimit` as two separate rules
+    - Candidate A3 -- Delete the reserved `requireAuth` helper and the never-emitted `UNAUTHENTICATED` code, plus the README sentence that apologises for them, as the declared prerequisite of row 58
+    - Candidate B1 -- The `books(ids:)` bulk root joins the lookahead: its `reviews` (and `Book.author → books`) start in tick 0, so 5 measured shapes lose one serial hop at an unchanged call count
+    - Candidate B2 -- Contained `/authors` windows share one downstream call: `c: authors{totalCount}` + `top: authors(first:3)` costs 1 call, not 2
+    - Candidate B3 -- The quality gate's critical path drops from about 17 s to about 12 s: `test_iter61`'s 7 sleep-bound shutdown tests stop running back to back
+    winner: B1
+    ship: pending (not yet decided)
   iter-86
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- CI consults the quality bar: the workflow runs `npm run typecheck` and `npm run benchmark -- --threshold 3`, and the benchmark exits 2 on an unknown or malformed flag (row 53)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One sendable-key gate in `loaders.ts`: collapse `fetchSendable` + `indexBy` + `groupBy` + the 2 post-filter ternaries into one `fetchByKey(keys, fetch, keyOf)` helper. `isSendableKey` is consulted at 1 site, not 5.
     - Candidate B3 -- Delete the reserved `requireAuth` helper and its never-emitted `UNAUTHENTICATED` code, plus the README sentence that apologises for them, before an error-code vocabulary freezes a code that no request can receive
     winner: A2
-    ship: pending (not yet decided)
+    ship: PUSHED 3315f25
   iter-85
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- By-id keys the REST list syntax cannot carry safely (contain `,`, are empty or padded, or exceed a length cap) resolve per-item `NOT_FOUND` at 0 downstream calls, instead of smuggling a batch past the 100-id cap or poisoning their honest siblings (row 83, widened)
@@ -531,4 +541,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-53 scouted iterations
+54 scouted iterations

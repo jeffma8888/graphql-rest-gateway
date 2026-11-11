@@ -14,10 +14,11 @@ import { MAX_PAGE_SIZE } from './pagination/page-size.js';
  * default field resolver, so only the graph "edges" need explicit resolvers.
  *
  * By-id roots also kick off a lookahead prefetch (see `./lookahead`): the
- * child edge's key is `args.id`, so its batched load need not wait for the
- * root fetch to return. `Book.author` does the same one level down: the key
- * `Author.books` needs is `book.authorId`, already on the parent row, so the
- * author's books load starts in the same tick as the author load.
+ * child edge's key is `args.id` (each of `args.ids` for `books(ids:)`), so
+ * its batched load need not wait for the root fetch to return. `Book.author`
+ * does the same one level down: the key `Author.books` needs is
+ * `book.authorId`, already on the parent row, so the author's books load
+ * starts in the same tick as the author load.
  */
 export const resolvers: Resolvers = {
   // Roots that call `willResolveChild` must be listed in BY_ID_ROOTS (lookahead.ts).
@@ -43,9 +44,12 @@ export const resolvers: Resolvers = {
       }
       return book;
     },
-    // No lookahead here: a `books(ids:)` root is not in BY_ID_ROOTS, so it
-    // turns the prefetch off for the whole operation (see lookahead.ts).
-    books: (_parent, args, ctx) => {
+    // A by-id root too (BY_ID_ROOTS, lookahead.ts): every key `Book.reviews`
+    // needs is already in `args.ids`, so their reviews load in one batch in the
+    // same tick as `/books/by-ids` (`author{ books }` rides the Book.author gate).
+    // The prefetch runs AFTER the size refusal, so an oversized list still costs
+    // 0 downstream calls; a missing id spends its speculative reviews call.
+    books: (_parent, args, ctx, info) => {
       if (args.ids.length > MAX_PAGE_SIZE) {
         // Refused before any load, so an oversized list costs 0 downstream calls.
         throw new GraphQLError(
@@ -59,6 +63,9 @@ export const resolvers: Resolvers = {
             },
           },
         );
+      }
+      if (willResolveChild(info, 'reviews')) {
+        for (const id of args.ids) ctx.services.review.prefetchReviewsForBook(id);
       }
       // One promise per item (not Promise.all): graphql-js completes each at its
       // own index, so an unknown id nulls only its slot and the error path is
