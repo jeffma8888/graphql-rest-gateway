@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1404%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1441%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -289,7 +289,7 @@ The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true,
 ## 7. Senior-concern coverage
 
 ### Cursor pagination (Relay)
-`Query.authors` is a Relay connection: `edges { node cursor }`, `pageInfo { hasNextPage hasPreviousPage startCursor endCursor }`, `totalCount`. Cursors are **opaque** (base64 of an offset) so clients can't parse them — which lets the implementation swap offset for a keyset/seek cursor later without a breaking change. `after: endCursor` pages forward cleanly (verified in the integration test). Malformed or out-of-range cursors surface a typed error (`extensions.code = BAD_CURSOR`). See `src/gateway/pagination/relay.ts`.
+`Query.authors` is a Relay connection: `edges { node cursor }`, `pageInfo { hasNextPage hasPreviousPage startCursor endCursor }`, `totalCount`. Cursors are **opaque** (base64 of an offset) so clients can't parse them — which lets the implementation swap offset for a keyset/seek cursor later without a breaking change. `after: endCursor` pages forward cleanly (verified in the integration test). A malformed cursor, meaning one whose base64 does not decode to `offset:` followed by a number, or one that encodes a negative offset, fails with a typed error (`extensions.code = BAD_CURSOR`, `data: null`) before any downstream call, on `after` and `before` alike. A well-formed `after` cursor at or past the end of the list, or a `before` cursor at its start, is not an error: it returns an empty page with no error (`edges: []`, with `totalCount` still filled in). See `src/gateway/pagination/relay.ts`.
 
 Paging works in both directions. `first`/`after` reads forward (`first` defaults to 10 when neither `first` nor `last` is given). `last`/`before` reads backward: `authors(last: 2)` is the tail of the list, and `authors(last: 2, before: startCursor)` is the previous page, so walking `before: startCursor` while `hasPreviousPage` is true visits every item exactly once. `after` and `before` together select a window, for example `authors(after: c1, before: c5)` returns the items strictly between those two cursors, and `first` or `last` then takes from its start or end. Passing `first` and `last` together is an error with `extensions.code = BAD_PAGINATION_ARGS`, raised before any downstream call. Any `before` costs 1 downstream call. `last` without `before` costs 1 call when the tail fits in the first page read, and 2 otherwise, because the REST contract has no count or tail route, so the gateway learns `totalCount` from one page and then reads the tail. Page sizes clamp to 0..100, and a 0 or negative `first`/`last` returns an empty page (`edges: []`, with `totalCount` still filled in). The gateway also truncates every page to its clamped size, rather than trusting the backend's `limit`.
 
@@ -357,7 +357,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1404 tests across 57 files (Vitest), all green:
+`npm test` — 1441 tests across 58 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -383,6 +383,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Unsendable by-id keys** (`test_iter85_behavior.test.ts`): empty, comma-joined, padded and over-256-character ids resolve `NOT_FOUND` at 0 downstream calls on single roots, the lookahead prefetch and `books(ids:)`, while honest ids in the same batch keep their data in exactly 1 call (2 under NAIVE) and the nested N+1 query stays at 3/21 calls.
 - **Coded variable errors** (`test_iter86_behavior.test.ts`): uncoercible, missing and `null`-in-list variables answer HTTP 400 with `extensions.code = BAD_USER_INPUT` on each error at 0 downstream calls, over POST, GET and batch elements, with message and `locations` unchanged, while every already-coded error keeps its own code and status.
 - **Bulk root keeps the lookahead** (`test_iter87_behavior.test.ts`): `books(ids:)` prefetches its `reviews` in the same tick as `/books/by-ids` (and `author{ books }` in the same tick as `/authors/by-ids`), checked causally (the child request reaches the backend before the parent response is sent) at unchanged call counts, for variables, fragments and duplicates, without turning off a sibling root's prefetch or splitting the iter-83 mix batch; the gate stays off for list roots that reach the loaders, `@skip` and NAIVE, refusals stay at 0 calls, and an all-missing list spends the speculative call (2 instead of 1).
+- **Pagination contract docs** (`test_iter88_behavior.test.ts`): the §7 cursor sentences and the `AuthorEdge`/`PageInfo` SDL descriptions are checked against live behaviour: malformed and negative-offset cursors fail with `BAD_CURSOR` at 0 downstream calls, an `after` cursor at or past the end and a `before` cursor at the start return a 200 empty page with `totalCount` filled in, edge cursors work as `after` and `before`, and each description matches in the SDL, the generated types and introspection.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

@@ -81,13 +81,17 @@ type AuthorConnection {
 
 type AuthorEdge {
   node: Author!
-  "Opaque cursor for this edge; pass as `after` to page forward."
+  "Opaque cursor marking this edge's position; pass as `after` to read the items following this node, or as `before` to read the items preceding it."
   cursor: String!
 }
 
 type PageInfo {
+  "True when more items follow this page; keep paging forward with `after: endCursor`."
   hasNextPage: Boolean!
+  "True when more items precede this page; keep paging backward with `before: startCursor`."
   hasPreviousPage: Boolean!
+  "Cursor of the first edge on this page; pass as `before` to read the previous page."
   startCursor: String
+  "Cursor of the last edge on this page; pass as `after` to read the next page."
   endCursor: String
 }

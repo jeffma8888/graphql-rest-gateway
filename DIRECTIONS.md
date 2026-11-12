@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-88
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- `authors(last: N)` ("latest N") costs 1 downstream call and 1 serial hop on a warm gateway, not 2: a gateway-scoped `total` hint lets the tail be read directly and confirmed by the page's own `total`
+    - Candidate A2 -- Contained `/authors` windows share one downstream call: `count+top3` 2 → 1 call, `top3+top10` 2 → 1, and `count+last3` 3 calls / 2 hops → 1 call / 1 hop
+    - Candidate A3 -- Compress GraphQL responses the client accepts: the 10-author page goes from 1197 B to 371 B on the wire (−69 %) through the zero-dependency `useContentEncoding` already installed with Yoga (row 66)
+    - Candidate B1 -- The pagination contract tells the truth in both places a client reads it: README §7 drops "out-of-range cursors surface `BAD_CURSOR`" (they return a 200 empty page), and the GraphiQL-visible SDL stops saying an edge cursor is only for `after`
+    - Candidate B2 -- The README's Programmatic-usage snippet exits when run as written, and a doc-test runs the block itself (row 46)
+    - Candidate B3 -- Stale figures locked in by tests: re-derive "351" and the coverage numbers, and replace the literal pins with checks against their sources (row 29)
+    winner: B1
+    ship: pending (not yet decided)
   iter-87
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One execute-phase result writer: fold `downstreamCallsPlugin` and `badUserInputPlugin` into `queryComplexityPlugin`, so each operation's result is rebuilt once instead of three times
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Contained `/authors` windows share one downstream call: `c: authors{totalCount}` + `top: authors(first:3)` costs 1 call, not 2
     - Candidate B3 -- The quality gate's critical path drops from about 17 s to about 12 s: `test_iter61`'s 7 sleep-bound shutdown tests stop running back to back
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 75704b6
   iter-86
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- CI consults the quality bar: the workflow runs `npm run typecheck` and `npm run benchmark -- --threshold 3`, and the benchmark exits 2 on an unknown or malformed flag (row 53)
@@ -541,4 +551,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-54 scouted iterations
+55 scouted iterations

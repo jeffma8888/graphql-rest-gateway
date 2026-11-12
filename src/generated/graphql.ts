@@ -44,7 +44,7 @@ export type AuthorConnection = {
 };
 
 export type AuthorEdge = {
-  /** Opaque cursor for this edge; pass as `after` to page forward. */
+  /** Opaque cursor marking this edge's position; pass as `after` to read the items following this node, or as `before` to read the items preceding it. */
   cursor: Scalars['String']['output'];
   node: Author;
 };
@@ -68,9 +68,13 @@ export type BookReviewsArgs = {
 };
 
 export type PageInfo = {
+  /** Cursor of the last edge on this page; pass as `after` to read the next page. */
   endCursor?: Maybe<Scalars['String']['output']>;
+  /** True when more items follow this page; keep paging forward with `after: endCursor`. */
   hasNextPage: Scalars['Boolean']['output'];
+  /** True when more items precede this page; keep paging backward with `before: startCursor`. */
   hasPreviousPage: Scalars['Boolean']['output'];
+  /** Cursor of the first edge on this page; pass as `before` to read the previous page. */
   startCursor?: Maybe<Scalars['String']['output']>;
 };
 
