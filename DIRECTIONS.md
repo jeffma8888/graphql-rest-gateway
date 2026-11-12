@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-90
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!`, the author twin of the shipped `books(ids:)`, in `BY_ID_ROOTS` from day one
+    - Candidate A2 -- Filtered nested reviews: `Book.reviews(minRating: Int)` keeps only reviews rated at least N, applied after the one batched fetch and before `orderBy`/`first`
+    - Candidate A3 -- Relay refetch: `interface Node { id: ID! }` on Author and Book + `Query.node(id: ID!): Node` / `nodes(ids: [ID!]!): [Node]!`, resolved by probing both by-id loaders, so any N ids cost at most 2 downstream calls in 1 hop (row 49)
+    - Candidate B1 -- A 2xx whose body stalls or resets mid-read fails as typed `DOWNSTREAM_TIMEOUT` / `DOWNSTREAM_UNREACHABLE`, so clients and `/readyz` agree (row 54, behaviour half, no byte cap)
+    - Candidate B2 -- Admission prices what execution runs: complexity and depth skip selections excluded by `@skip`/`@include`, for literals at validation and variables at execute time (row 69)
+    - Candidate B3 -- Only cursors the gateway issued are accepted: `decodeCursor` requires an exact round-trip, so `""`, `offset:1abc`, `offset:2.9`, `offset:01` and padded or garbage base64 fail `BAD_CURSOR` at 0 calls (row 45, cursor-validation half)
+    winner: B1
+    ship: pending (not yet decided)
   iter-89
     lenses: unknown
     - Candidate A1 -- Stale README figures that tests pin as literals: "351" and coverage "~84/86/89%" are re-derived, and each literal pin is replaced by a check against its source (row 29)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!`, the author twin of the shipped `books(ids:)`, in `BY_ID_ROOTS` from day one
     - Candidate B3 -- Aggregates priced as scalars: `Book.reviewCount: Int!`, `Book.averageRating: Float`, `Author.bookCount: Int!`, from the already-batched child lists
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 02f7fb4
   iter-88
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- `authors(last: N)` ("latest N") costs 1 downstream call and 1 serial hop on a warm gateway, not 2: a gateway-scoped `total` hint lets the tail be read directly and confirmed by the page's own `total`
@@ -561,4 +571,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-56 scouted iterations
+57 scouted iterations

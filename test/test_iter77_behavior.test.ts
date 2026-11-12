@@ -441,7 +441,7 @@ describe('EB7 - failure outcomes match what the client sees', () => {
 
 // ---------- EB8 ----------
 describe('EB8 - any other failure fires exactly once', () => {
-  it('body reset after a 2xx status line: one event, outcome other, errorCode null, status 200', async () => {
+  it('body reset after a 2xx status line: one event, outcome unreachable, errorCode DOWNSTREAM_UNREACHABLE, status 200 (re-pinned iter-90, row 89)', async () => {
     fail = { route: '/books/by-author', kind: 'reset' };
     const { events, hook } = recorder();
     const r = await withGw({ restBaseUrl: stubUrl, onDownstreamCall: hook }, (gw) =>
@@ -454,7 +454,7 @@ describe('EB8 - any other failure fires exactly once', () => {
     expect(events.length).toBe(hits.length);
     const bad = events.filter((e) => e.route === '/books/by-author');
     expect(bad).toHaveLength(1);
-    expect(bad[0]).toMatchObject({ outcome: 'other', errorCode: null, status: 200 });
+    expect(bad[0]).toMatchObject({ outcome: 'unreachable', errorCode: 'DOWNSTREAM_UNREACHABLE', status: 200 });
   });
 });
 

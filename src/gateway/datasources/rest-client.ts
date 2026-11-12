@@ -141,8 +141,8 @@ function readBody<T>(route: string, status: number, text: string, read: (body: u
 const parsedJson = (body: unknown): unknown => body;
 
 /**
- * The downstream could not be reached at all (connection refused, DNS
- * failure, reset before headers). WHY typed: it used to escape as an untyped
+ * The downstream transport failed (connection refused, DNS failure, a reset
+ * before or during the body). WHY typed: it used to escape as an untyped
  * "Unexpected error.", which a client cannot tell from a gateway bug and a
  * readiness probe cannot name. The message names only the route: the host,
  * port and errno (`ECONNREFUSED`) describe the backend's topology, which is not
@@ -161,9 +161,9 @@ export class DownstreamUnreachable extends GraphQLError {
 }
 
 /**
- * Types a rejected `fetch`. WHY every non-timeout rejection is "unreachable":
- * the URL is built (and the base validated) before `fetch`, so what is left is
- * the transport failing before any response arrived.
+ * Types a rejected `fetch` or body read. WHY every non-timeout rejection is
+ * "unreachable": the URL is built (and the base validated) before `fetch`, so
+ * what is left is the transport failing, before the headers or mid-body.
  */
 function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLError {
   if (err instanceof DOMException && err.name === 'TimeoutError') {
@@ -175,9 +175,25 @@ function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLErr
 }
 
 /**
+ * Reads a 2xx body as text, typed like a failed `fetch`. WHY the same mapping:
+ * the `AbortSignal.timeout` passed to `fetch` also bounds the body read, so a
+ * body that stalls past the deadline rejects with the same `TimeoutError`, and
+ * a connection reset mid-body is the transport failing exactly as before the
+ * headers arrived. Left untyped, both reached clients as "Unexpected error."
+ * while `/readyz` reported a code, so the two disagreed.
+ */
+async function bodyText(path: string, timeoutMs: number, res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch (err: unknown) {
+    throw fetchFailure(path, timeoutMs, err);
+  }
+}
+
+/**
  * How one sent downstream call ended. The four typed failures map 1:1 onto the
- * `extensions.code` a client sees; `other` covers anything untyped (e.g. a body
- * that stalls or resets after a 2xx status line).
+ * `extensions.code` a client sees; `other` covers anything left untyped (e.g. a
+ * contract reader throwing an unexpected exception rather than a mismatch).
  */
 export type DownstreamCallOutcome = 'ok' | 'http_error' | 'bad_response' | 'unreachable' | 'timeout' | 'other';
 
@@ -190,7 +206,10 @@ export type DownstreamCallOutcome = 'ok' | 'http_error' | 'bad_response' | 'unre
  */
 export interface DownstreamCallEvent {
   route: string;
-  /** HTTP status that arrived, or `null` when no response did (unreachable, timeout). */
+  /**
+   * HTTP status that arrived, or `null` when no headers did. A body-read
+   * timeout or reset after the headers keeps the status (e.g. 200).
+   */
   status: number | null;
   durationMs: number;
   outcome: DownstreamCallOutcome;
@@ -341,7 +360,7 @@ export class RestClient {
         extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
       });
     }
-    return readBody(path, res.status, await res.text(), read ?? parsedJson);
+    return readBody(path, res.status, await bodyText(path, this.timeoutMs, res), read ?? parsedJson);
   }
 
   resetStats(): void {
