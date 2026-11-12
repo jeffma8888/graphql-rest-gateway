@@ -332,7 +332,10 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
 
   let shuttingDown = false;
   let inFlight = 0;
+  // Fires at most once, so it is never reset to null: no new work is
+  // admitted after shuttingDown, so inFlight reaches 0 only once after it.
   let drainResolve: (() => void) | null = null;
+  let drainPromise: Promise<void> | null = null;
 
   // WHY memoised per Request: Yoga calls the context factory once per
   // operation, but hands every operation of one batched POST the same
@@ -417,16 +420,24 @@ query Sample {
       done();
       return Promise.resolve(result);
     },
-    async close(): Promise<void> {
+    // WHY one shared drain: a second close() (SIGINT + SIGTERM, afterAll +
+    // helper) must not overwrite the first caller's resolver and strand it
+    // until the cap. WHY clearTimeout: an uncleared cap timer keeps a drained
+    // process alive for the rest of the 5 s, which embedders that await
+    // close() and expect Node to exit would pay as a silent tail.
+    close(): Promise<void> {
       shuttingDown = true;
-      if (inFlight > 0) {
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            drainResolve = resolve;
-          }),
-          new Promise<void>((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
-        ]);
+      if (!drainPromise) {
+        if (inFlight === 0) return Promise.resolve();
+        drainPromise = new Promise<void>((resolve) => {
+          const cap = setTimeout(resolve, DRAIN_TIMEOUT_MS);
+          drainResolve = () => {
+            clearTimeout(cap);
+            resolve();
+          };
+        });
       }
+      return drainPromise;
     },
   };
 }

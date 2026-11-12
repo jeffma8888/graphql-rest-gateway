@@ -49,7 +49,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 27 | Multi-root by-id lookahead prefetch (aliased `author(id)`/`book(id)` roots skip one serial hop; call counts unchanged) | done | 63 |
 | 28 | Package entry exports `NAIVE`/`BATCHED` (frozen) + `type LoaderOptions`; README export list computed-guarded; `requireAuth` prose corrected | done | 64 |
 | 29 | README cost figures derived from a live run (stale "351"; benchmark query costs 356) | planned | — |
-| 30 | `close()` clears its drain-bound timer and shares one drain across repeated calls. Abort in-flight `/readyz` checks on `close()` (iter-74: a probe hung on a dead backend holds `close()` for the full 5 s cap) | planned | — |
+| 30 | Abort in-flight `/readyz` checks on `close()` (iter-74: a probe hung on a dead backend holds `close()` for the full 5 s cap; timer + shared-drain half shipped as row 90) | planned | — |
 | 31 | `Book.author` → `Author.books` lookahead (`book(id){author{books}}`: 3 hops → 2, call counts unchanged) | done | 70 |
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
@@ -109,3 +109,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 87 | Pagination contract truth: README §7 says malformed cursors → `BAD_CURSOR` at 0 calls, past-end `after` / start `before` cursors → 200 empty page, no error; SDL `AuthorEdge.cursor` valid as `after` or `before`, all 4 `PageInfo` fields described (codegen regen) | done | 88 |
 | 88 | Ordered nested lists: `Author.books(first, orderBy: BookOrder)` (`YEAR_ASC`/`YEAR_DESC`), `Book.reviews(first, orderBy: ReviewOrder)` (`RATING_DESC`/`RATING_ASC`); stable sort of a copy after the one batched fetch, then `first`; calls (3/21) and cost unchanged (latest book 0/5 → 5/5, top review 5/15 → 15/15) | done | 89 |
 | 89 | Typed body-read failures: a 2xx whose body stalls past `downstreamTimeoutMs` → `DOWNSTREAM_TIMEOUT`, a mid-body reset → `DOWNSTREAM_UNREACHABLE` (was INTERNAL_SERVER_ERROR / hook `other`); `/readyz` names the same code; re-pins test_iter77 EB8 | done | 90 |
+| 90 | `close()` is idempotent: every call shares one drain (2nd call no longer strands the 1st until the 5 s cap) and the cap timer is cleared, so a drained process exits at once (was ~4.9 s tail) | done | 91 |

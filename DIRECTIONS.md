@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-91
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- `close()` is idempotent and lets the process exit once drained: no 5 s orphan drain timer, and a second `close()` cannot strand the first (row 30, timer and shared-drain half)
+    - Candidate A2 -- A 2xx body the gateway cannot decode (corrupt `content-encoding`) is `DOWNSTREAM_BAD_RESPONSE`, not `DOWNSTREAM_UNREACHABLE`, for clients, `onDownstreamCall` and `/readyz`
+    - Candidate A3 -- Only cursors the gateway issued are accepted: `decodeCursor` requires `encodeCursor(n) === cursor`, so lenient forms fail `BAD_CURSOR` at 0 calls (row 45, cursor-validation half)
+    - Candidate B1 -- `check-backend --json` gives each route a machine-readable `code`, using the same vocabulary the gateway and `/readyz` already emit, so CI scripts stop regex-matching free-text `problem` strings
+    - Candidate B2 -- `check-backend` honours the `DOWNSTREAM_TIMEOUT_MS` that `npm start` reads, so a green pre-flight means the gateway will not time out, and a bad value exits 2 like it does for `npm start` (row 42, timeout half)
+    - Candidate B3 -- The package entry exports `checkBackend` (with the `CheckReport`/`RouteResult` types and `CONTRACT_ROUTES`), so a programmatic `createGateway` user can pre-flight their backend in their own boot code
+    winner: A1
+    ship: pending (not yet decided)
   iter-90
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!`, the author twin of the shipped `books(ids:)`, in `BY_ID_ROOTS` from day one
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Admission prices what execution runs: complexity and depth skip selections excluded by `@skip`/`@include`, for literals at validation and variables at execute time (row 69)
     - Candidate B3 -- Only cursors the gateway issued are accepted: `decodeCursor` requires an exact round-trip, so `""`, `offset:1abc`, `offset:2.9`, `offset:01` and padded or garbage base64 fail `BAD_CURSOR` at 0 calls (row 45, cursor-validation half)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED bf88f82
   iter-89
     lenses: unknown
     - Candidate A1 -- Stale README figures that tests pin as literals: "351" and coverage "~84/86/89%" are re-derived, and each literal pin is replaced by a check against its source (row 29)
@@ -571,4 +581,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-57 scouted iterations
+58 scouted iterations
