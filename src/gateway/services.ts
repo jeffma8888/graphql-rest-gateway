@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import type { AuthorBooksArgs, BookReviewsArgs } from '../generated/graphql.js';
+import type { AuthorBooksArgs, BookOrder, BookReviewsArgs, ReviewOrder } from '../generated/graphql.js';
 import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
 import type { AuthorPage, DataSources } from './datasources/index.js';
 import type { Loaders } from './loaders.js';
@@ -28,6 +28,45 @@ const clamp = (n: number): number => Math.min(Math.max(n, 0), MAX_PAGE_SIZE);
  */
 function takeFirst<T>(rows: T[], first: number | null | undefined): T[] {
   return first == null ? rows : rows.slice(0, clamp(first));
+}
+
+/**
+ * A numeric sort key and its direction (1 ascending, -1 descending). The
+ * comparator subtracts keys, so `key` must return a finite number (today the
+ * contract-validated `Int!` fields `year` and `rating`); a string key such as a
+ * future `TITLE_ASC` needs its own comparator, not this subtraction.
+ */
+interface Ordering<T> {
+  key: (row: T) => number;
+  dir: 1 | -1;
+}
+
+/**
+ * Nested-list `orderBy`: the sort key and direction for each enum value.
+ * Sorting runs in the gateway over the rows the by-key route already returned
+ * (the REST contract has no sort parameter), so it never adds a downstream
+ * call and never enters a loader key, the lookahead or the complexity rule.
+ */
+const BOOK_ORDER: Record<BookOrder, Ordering<BookRow>> = {
+  YEAR_ASC: { key: (b) => b.year, dir: 1 },
+  YEAR_DESC: { key: (b) => b.year, dir: -1 },
+};
+const REVIEW_ORDER: Record<ReviewOrder, Ordering<ReviewRow>> = {
+  RATING_DESC: { key: (r) => r.rating, dir: -1 },
+  RATING_ASC: { key: (r) => r.rating, dir: 1 },
+};
+
+/**
+ * Sorted COPY of `rows` (omitted/null order returns `rows` as is). Never
+ * `.sort()` the loader result itself: it is the DataLoader-cached list shared
+ * by every alias and by the lookahead prefetch, so an in-place sort would leak
+ * one alias's order into another's. `Array.prototype.sort` is stable (ES2019),
+ * so ties keep backend order. The bundled data has no ties.
+ */
+function orderRows<T>(rows: T[], order: Ordering<T> | undefined): T[] {
+  if (order === undefined) return rows;
+  const { key, dir } = order;
+  return [...rows].sort((a, b) => dir * (key(a) - key(b)));
 }
 
 export interface PageArgs {
@@ -171,8 +210,14 @@ export class BookService {
     return this.loaders.bookById.load(id);
   }
 
-  async booksForAuthor(authorId: string, first?: AuthorBooksArgs['first']): Promise<BookRow[]> {
-    return takeFirst(await this.loaders.booksByAuthorId.load(authorId), first);
+  /** Sort (if `orderBy`) BEFORE `first`, so `first: 1, orderBy: YEAR_DESC` is the latest book. */
+  async booksForAuthor(
+    authorId: string,
+    first?: AuthorBooksArgs['first'],
+    orderBy?: AuthorBooksArgs['orderBy'],
+  ): Promise<BookRow[]> {
+    const books = await this.loaders.booksByAuthorId.load(authorId);
+    return takeFirst(orderRows(books, orderBy == null ? undefined : BOOK_ORDER[orderBy]), first);
   }
 }
 
@@ -191,8 +236,14 @@ export class ReviewService {
     });
   }
 
-  async reviewsForBook(bookId: string, first?: BookReviewsArgs['first']): Promise<ReviewRow[]> {
-    return takeFirst(await this.loaders.reviewsByBookId.load(bookId), first);
+  /** Same sort-then-`first` contract as `BookService.booksForAuthor`. */
+  async reviewsForBook(
+    bookId: string,
+    first?: BookReviewsArgs['first'],
+    orderBy?: BookReviewsArgs['orderBy'],
+  ): Promise<ReviewRow[]> {
+    const reviews = await this.loaders.reviewsByBookId.load(bookId);
+    return takeFirst(orderRows(reviews, orderBy == null ? undefined : REVIEW_ORDER[orderBy]), first);
   }
 }
 

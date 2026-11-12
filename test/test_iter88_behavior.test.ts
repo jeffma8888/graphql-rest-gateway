@@ -294,16 +294,18 @@ describe('EB9 - schema-first: SDL and generated types carry the descriptions', (
 
 // ---------- EB10 ----------
 /**
- * Base for "unchanged" pins: if this iteration's commit already exists, compare
- * against its parent, otherwise against HEAD (working tree vs HEAD).
+ * Range for "unchanged" pins: if this iteration's commit already exists, diff
+ * that commit against its parent (`hit~1..hit`), so later iterations' src
+ * changes do not count; otherwise diff HEAD against the working tree.
+ * (iter-89 re-pin: the old base diffed `hit~1` against the WORKING TREE.)
  */
-function baseRev(): string {
+function baseRev(): string[] {
   const git = (...args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
   const hit = git('log', '--format=%H', '--grep', 'foundry iter 88)', '-n', '1');
-  return hit ? `${hit}~1` : 'HEAD';
+  return hit ? [`${hit}~1`, hit] : ['HEAD'];
 }
-function changedSince(rev: string, ...paths: string[]): string[] {
-  const out = execFileSync('git', ['diff', '--name-only', rev, '--', ...paths], { cwd: root, encoding: 'utf8' });
+function changedSince(revs: string[], ...paths: string[]): string[] {
+  const out = execFileSync('git', ['diff', '--name-only', ...revs, '--', ...paths], { cwd: root, encoding: 'utf8' });
   return out.split('\n').filter((l) => l.length > 0);
 }
 

@@ -203,19 +203,20 @@ afterAll(async () => {
 
 // ---------- EB1 ----------
 describe('EB1 - SDL contract', () => {
-  it('schema.graphql declares books(first: Int): [Book!]! on Author and reviews(first: Int): [Review!]! on Book, no default', () => {
+  // iter-89 (PRODUCT row 88) widened both arg lists to `(first: Int, orderBy: <Order>)`; `first` is unchanged.
+  it('schema.graphql declares books(first: Int, orderBy: BookOrder): [Book!]! on Author and reviews(first: Int, orderBy: ReviewOrder): [Review!]! on Book, no default', () => {
     const author = SDL.match(/type\s+Author\b[^{]*\{([\s\S]*?)\}/);
     const book = SDL.match(/type\s+Book\b[^{]*\{([\s\S]*?)\}/);
     expect(author).not.toBeNull();
     expect(book).not.toBeNull();
-    expect(author![1]).toMatch(/\bbooks\s*\(\s*first\s*:\s*Int\s*\)\s*:\s*\[\s*Book!\s*\]!/);
-    expect(book![1]).toMatch(/\breviews\s*\(\s*first\s*:\s*Int\s*\)\s*:\s*\[\s*Review!\s*\]!/);
+    expect(author![1]).toMatch(/\bbooks\s*\(\s*first\s*:\s*Int\s*,\s*orderBy\s*:\s*BookOrder\s*\)\s*:\s*\[\s*Book!\s*\]!/);
+    expect(book![1]).toMatch(/\breviews\s*\(\s*first\s*:\s*Int\s*,\s*orderBy\s*:\s*ReviewOrder\s*\)\s*:\s*\[\s*Review!\s*\]!/);
   });
 
   it.each([
-    ['Author', 'books', 'Book'],
-    ['Book', 'reviews', 'Review'],
-  ])('introspection: %s.%s has exactly one nullable Int arg `first`, no default, type [%s!]!', async (type, field, item) => {
+    ['Author', 'books', 'Book', 'BookOrder'],
+    ['Book', 'reviews', 'Review', 'ReviewOrder'],
+  ])('introspection: %s.%s has args [first: Int, orderBy], no defaults, type [%s!]!', async (type, field, item, order) => {
     const body = await gql(
       gw,
       `{ __type(name:"${type}"){ fields{ name args{ name defaultValue type{ kind name ofType{ name } } }
@@ -225,7 +226,10 @@ describe('EB1 - SDL contract', () => {
     const fields = (body.data?.__type as { fields: Array<{ name: string; args: unknown[]; type: unknown }> }).fields;
     const f = fields.find((x) => x.name === field);
     expect(f).toBeDefined();
-    expect(f!.args).toEqual([{ name: 'first', defaultValue: null, type: { kind: 'SCALAR', name: 'Int', ofType: null } }]);
+    expect(f!.args).toEqual([
+      { name: 'first', defaultValue: null, type: { kind: 'SCALAR', name: 'Int', ofType: null } },
+      { name: 'orderBy', defaultValue: null, type: { kind: 'ENUM', name: order, ofType: null } },
+    ]);
     expect(f!.type).toEqual({ kind: 'NON_NULL', ofType: { kind: 'LIST', ofType: { kind: 'NON_NULL', name: null } } });
     const inner = await gql(gw, `{ __type(name:"${type}"){ fields{ name type{ ofType{ ofType{ ofType{ name } } } } } } }`);
     const g = (inner.data?.__type as { fields: Array<{ name: string; type: { ofType: { ofType: { ofType: { name: string } } } } }> })

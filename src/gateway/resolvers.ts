@@ -81,7 +81,7 @@ export const resolvers: Resolvers = {
   },
 
   Author: {
-    books: (author, args, ctx) => ctx.services.book.booksForAuthor(author.id, args.first),
+    books: (author, args, ctx) => ctx.services.book.booksForAuthor(author.id, args.first, args.orderBy),
   },
 
   Book: {
@@ -105,7 +105,7 @@ export const resolvers: Resolvers = {
       }
       return author;
     },
-    reviews: (book, args, ctx) => ctx.services.review.reviewsForBook(book.id, args.first),
+    reviews: (book, args, ctx) => ctx.services.review.reviewsForBook(book.id, args.first, args.orderBy),
   },
 
   Review: {

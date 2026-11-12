@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-89
+    lenses: unknown
+    - Candidate A1 -- Stale README figures that tests pin as literals: "351" and coverage "~84/86/89%" are re-derived, and each literal pin is replaced by a check against its source (row 29)
+    - Candidate A2 -- The README Programmatic-usage snippet exits when run as written, and a doc-test runs the block itself (row 46)
+    - Candidate A3 -- README §4's "real `npm run benchmark` run" transcript matches what the benchmark prints, and a doc-test regenerates it with the timings masked
+    - Candidate B1 -- Ordered nested lists: `Author.books(first, orderBy: BookOrder)` / `Book.reviews(first, orderBy: ReviewOrder)`, sorted after the one batched fetch
+    - Candidate B2 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!`, the author twin of the shipped `books(ids:)`, in `BY_ID_ROOTS` from day one
+    - Candidate B3 -- Aggregates priced as scalars: `Book.reviewCount: Int!`, `Book.averageRating: Float`, `Author.bookCount: Int!`, from the already-batched child lists
+    winner: B1
+    ship: pending (not yet decided)
   iter-88
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- `authors(last: N)` ("latest N") costs 1 downstream call and 1 serial hop on a warm gateway, not 2: a gateway-scoped `total` hint lets the tail be read directly and confirmed by the page's own `total`
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The README's Programmatic-usage snippet exits when run as written, and a doc-test runs the block itself (row 46)
     - Candidate B3 -- Stale figures locked in by tests: re-derive "351" and the coverage numbers, and replace the literal pins with checks against their sources (row 29)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 03cc65c
   iter-87
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One execute-phase result writer: fold `downstreamCallsPlugin` and `badUserInputPlugin` into `queryComplexityPlugin`, so each operation's result is rebuilt once instead of three times
@@ -551,4 +561,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-55 scouted iterations
+56 scouted iterations

@@ -25,6 +25,8 @@ export type Author = {
    * All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors.
    * `first` keeps at most that many books (clamped to 0..100; omitted or null keeps all). The
    * slice happens after the one batched fetch, so it never adds a downstream call.
+   * `orderBy` sorts the fetched books in the gateway BEFORE `first` is applied (omitted or
+   * null keeps backend order); it is not pushed down, so calls and admission cost are unchanged.
    */
   books: Array<Book>;
   id: Scalars['ID']['output'];
@@ -34,6 +36,7 @@ export type Author = {
 
 export type AuthorBooksArgs = {
   first?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<BookOrder>;
 };
 
 export type AuthorConnection = {
@@ -56,6 +59,8 @@ export type Book = {
   /**
    * All reviews for this book. Batched by book id -> one downstream call for a whole page of books.
    * `first` keeps at most that many reviews (same clamp and semantics as `Author.books(first)`).
+   * `orderBy` sorts the fetched reviews in the gateway BEFORE `first` is applied, with the same
+   * semantics as `Author.books(orderBy)`: `reviews(first: 1, orderBy: RATING_DESC)` is the top review.
    */
   reviews: Array<Review>;
   title: Scalars['String']['output'];
@@ -65,7 +70,18 @@ export type Book = {
 
 export type BookReviewsArgs = {
   first?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<ReviewOrder>;
 };
+
+/**
+ * Order for `Author.books(orderBy)`, applied in the gateway to the books the backend
+ * returned. The sort is stable: books with equal years keep backend order.
+ */
+export type BookOrder =
+  /** Oldest first (publication year ascending). */
+  | 'YEAR_ASC'
+  /** Newest first (publication year descending): `books(first: 1, orderBy: YEAR_DESC)` is the latest book. */
+  | 'YEAR_DESC';
 
 export type PageInfo = {
   /** Cursor of the last edge on this page; pass as `after` to read the next page. */
@@ -136,6 +152,16 @@ export type Review = {
    */
   reviewer: Scalars['String']['output'];
 };
+
+/**
+ * Order for `Book.reviews(orderBy)`, applied in the gateway to the reviews the backend
+ * returned. The sort is stable: reviews with equal ratings keep backend order.
+ */
+export type ReviewOrder =
+  /** Lowest rating first. */
+  | 'RATING_ASC'
+  /** Highest rating first. */
+  | 'RATING_DESC';
 
 export type WithIndex<TObject> = TObject & Record<string, any>;
 export type ResolversObject<TObject> = WithIndex<TObject>;
@@ -213,12 +239,14 @@ export type ResolversTypes = ResolversObject<{
   AuthorConnection: ResolverTypeWrapper<AuthorConnectionModel>;
   AuthorEdge: ResolverTypeWrapper<AuthorEdgeModel>;
   Book: ResolverTypeWrapper<BookRow>;
+  BookOrder: BookOrder;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   PageInfo: ResolverTypeWrapper<PageInfo>;
   Query: ResolverTypeWrapper<{}>;
   Review: ResolverTypeWrapper<ReviewRow>;
+  ReviewOrder: ReviewOrder;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
 }>;
 

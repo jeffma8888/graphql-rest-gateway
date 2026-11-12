@@ -39,8 +39,10 @@ type Author {
   All books by this author. Resolved through a batched DataLoader -> one downstream call for a whole page of authors.
   `first` keeps at most that many books (clamped to 0..100; omitted or null keeps all). The
   slice happens after the one batched fetch, so it never adds a downstream call.
+  `orderBy` sorts the fetched books in the gateway BEFORE `first` is applied (omitted or
+  null keeps backend order); it is not pushed down, so calls and admission cost are unchanged.
   """
-  books(first: Int): [Book!]!
+  books(first: Int, orderBy: BookOrder): [Book!]!
 }
 
 type Book {
@@ -52,8 +54,10 @@ type Book {
   """
   All reviews for this book. Batched by book id -> one downstream call for a whole page of books.
   `first` keeps at most that many reviews (same clamp and semantics as `Author.books(first)`).
+  `orderBy` sorts the fetched reviews in the gateway BEFORE `first` is applied, with the same
+  semantics as `Author.books(orderBy)`: `reviews(first: 1, orderBy: RATING_DESC)` is the top review.
   """
-  reviews(first: Int): [Review!]!
+  reviews(first: Int, orderBy: ReviewOrder): [Review!]!
 }
 
 type Review {
@@ -68,6 +72,28 @@ type Review {
   reviewer: String!
   "The book this review is for (batched by book id)."
   book: Book!
+}
+
+"""
+Order for `Author.books(orderBy)`, applied in the gateway to the books the backend
+returned. The sort is stable: books with equal years keep backend order.
+"""
+enum BookOrder {
+  "Oldest first (publication year ascending)."
+  YEAR_ASC
+  "Newest first (publication year descending): `books(first: 1, orderBy: YEAR_DESC)` is the latest book."
+  YEAR_DESC
+}
+
+"""
+Order for `Book.reviews(orderBy)`, applied in the gateway to the reviews the backend
+returned. The sort is stable: reviews with equal ratings keep backend order.
+"""
+enum ReviewOrder {
+  "Highest rating first."
+  RATING_DESC
+  "Lowest rating first."
+  RATING_ASC
 }
 
 # --- Relay connection types (cursor pagination) ---------------------------
