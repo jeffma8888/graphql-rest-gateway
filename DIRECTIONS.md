@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-96
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- `@stream` on list fields: one SDL line streams list items over the row 93 multipart/SSE path at unchanged calls, and a JSON-only client gets a typed 406 at 0 calls
+    - Candidate A2 -- HTTP-cacheable reads: SDL `@cacheControl(maxAge:)` hints make GET query replies carry `cache-control: public, max-age=N`, or `private` when the request is authenticated
+    - Candidate A3 -- Nested Relay pagination: `Author.booksConnection(first, after, orderBy): BookConnection!` pages an author's books with cursors, built from the one batched `/books/by-author` fetch (0 extra calls)
+    - Candidate B1 -- A client that disconnects stops costing downstream calls: the edge request's abort signal reaches `RestClient`'s fetch
+    - Candidate B2 -- The `@defer` accept guard refuses only defers the executor will actually run: it honours `@skip`/`@include`
+    - Candidate B3 -- Options are validated for the gateway's lifetime: `createGateway` snapshots `opts`, so mutating the caller's object after boot cannot bypass validation or bring back N+1 (row 50, snapshot half)
+    winner: B1
+    ship: pending (not yet decided)
   iter-95
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Re-derive the README figures the suite pins as stale literals (coverage "~84/86/89%" against a measured 94.45/95.92/95.65 %, and §7's "351" against a live 356), and replace each literal pin with a check against its source (row 29)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The gateway's first write path: `Mutation.addReview(bookId: ID!, rating: Int!, body: String!): Review!` proxied to `POST /reviews`, with the request's `reviewsByBookId` key cleared so the same response shows the write
     - Candidate B3 -- Relay refetch: `interface Node { id: ID! }` on Author and Book, plus `Query.node(id: ID!): Node` / `nodes(ids: [ID!]!): [Node]!`, resolved by probing both by-id loaders in one tick, so any N ids cost at most 2 calls in 1 hop (row 49)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED a3eff7c
   iter-94
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Re-land iter-93's `nodeListener` direct chunk writes (+13 pp edge throughput) with the throughput claim moved OUT of vitest into `npm run benchmark`; the suite keeps only deterministic pins
@@ -621,4 +631,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-62 scouted iterations
+63 scouted iterations

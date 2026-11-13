@@ -57,8 +57,10 @@ export interface GatewayOptions {
    * outcome and error code (see `DownstreamCallEvent`). WHY a hook and not a response
    * field: per-route data is backend topology, which clients must not see.
    * Never awaited; a throw or rejection is swallowed, so it cannot change a
-   * response. Budget-refused calls and the `/readyz` probe fire nothing. An
-   * orphaned lookahead prefetch can fire after its response was sent.
+   * response. Budget-refused calls, calls refused after the edge client
+   * disconnected, and the `/readyz` probe fire nothing; a call cancelled in
+   * flight by that disconnect fires `outcome: 'aborted'`. An orphaned
+   * lookahead prefetch can fire after its response was sent.
    */
   onDownstreamCall?: DownstreamCallHook;
 }
@@ -383,6 +385,9 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         maxDownstreamCalls: opts.maxDownstreamCalls,
         downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
         onDownstreamCall: opts.onDownstreamCall,
+        // `/readyz` builds its own client without one: a prober leaving must
+        // not cancel the check other probers share.
+        signal: request.signal,
       });
       contexts.set(request, context);
     }

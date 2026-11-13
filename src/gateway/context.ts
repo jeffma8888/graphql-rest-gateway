@@ -42,6 +42,12 @@ export interface CreateContextOptions {
   downstreamHeaders?: Readonly<Record<string, string>>;
   /** Operator hook fired once per sent downstream call; forwarded to RestClient. Unset = none. */
   onDownstreamCall?: DownstreamCallHook;
+  /**
+   * The edge request's abort signal; forwarded to RestClient. Once it aborts,
+   * no further downstream call is sent and an in-flight one is cancelled as
+   * `CLIENT_CLOSED_REQUEST`. Unset = calls run to completion as before.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -70,6 +76,7 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
       opts.maxDownstreamCalls,
       opts.downstreamHeaders,
       opts.onDownstreamCall,
+      opts.signal,
     );
   const datasources = buildDataSources(restClient);
   const loaderOptions = opts.loaderOptions ?? BATCHED;

@@ -161,11 +161,26 @@ export class DownstreamUnreachable extends GraphQLError {
 }
 
 /**
- * Types a rejected `fetch` or body read. WHY every non-timeout rejection is
- * "unreachable": the URL is built (and the base validated) before `fetch`, so
- * what is left is the transport failing, before the headers or mid-body.
+ * The edge client hung up, so the gateway stopped spending downstream calls on
+ * it. WHY a code of its own: operators must tell "the caller left" apart from a
+ * real backend outage, so it is never `DOWNSTREAM_UNREACHABLE` or `_TIMEOUT`.
  */
-function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLError {
+function clientClosed(path: string): GraphQLError {
+  return new GraphQLError(`Downstream request to ${path} cancelled: the client closed the request`, {
+    extensions: { code: 'CLIENT_CLOSED_REQUEST' },
+  });
+}
+
+/**
+ * Types a rejected `fetch` or body read. WHY every other non-timeout rejection
+ * is "unreachable": the URL is built (and the base validated) before `fetch`,
+ * so what is left is the transport failing, before the headers or mid-body.
+ * An aborted edge signal wins over both: that rejection is our own cancel.
+ */
+function fetchFailure(path: string, timeoutMs: number, err: unknown, edge?: AbortSignal): GraphQLError {
+  // A deadline that loses a same-tick race to a disconnect is reported as the
+  // disconnect: the client is gone either way.
+  if (edge?.aborted) return clientClosed(path);
   if (err instanceof DOMException && err.name === 'TimeoutError') {
     return new GraphQLError(`Downstream request to ${path} timed out after ${timeoutMs}ms`, {
       extensions: { code: 'DOWNSTREAM_TIMEOUT' },
@@ -176,26 +191,68 @@ function fetchFailure(path: string, timeoutMs: number, err: unknown): GraphQLErr
 
 /**
  * Reads a 2xx body as text, typed like a failed `fetch`. WHY the same mapping:
- * the `AbortSignal.timeout` passed to `fetch` also bounds the body read, so a
- * body that stalls past the deadline rejects with the same `TimeoutError`, and
+ * the call's signal passed to `fetch` (its deadline, plus the edge abort when
+ * there is one) also bounds the body read, so a body that stalls past the
+ * deadline rejects with the same `TimeoutError`, an edge abort mid-body is
+ * `CLIENT_CLOSED_REQUEST`, and
  * a connection reset mid-body is the transport failing exactly as before the
  * headers arrived. Left untyped, both reached clients as "Unexpected error."
  * while `/readyz` reported a code, so the two disagreed.
  */
-async function bodyText(path: string, timeoutMs: number, res: Response): Promise<string> {
+async function bodyText(path: string, timeoutMs: number, res: Response, edge?: AbortSignal): Promise<string> {
   try {
     return await res.text();
   } catch (err: unknown) {
-    throw fetchFailure(path, timeoutMs, err);
+    throw fetchFailure(path, timeoutMs, err, edge);
   }
 }
 
+interface CallSignal {
+  signal: AbortSignal;
+  /** Cancels this one call (used to fan out the edge abort). */
+  abort: (reason: unknown) => void;
+  /** Detaches the deadline listener; call once the call has settled. */
+  release: () => void;
+}
+
 /**
- * How one sent downstream call ended. The four typed failures map 1:1 onto the
- * `extensions.code` a client sees; `other` covers anything left untyped (e.g. a
- * contract reader throwing an unexpected exception rather than a mismatch).
+ * The signal one downstream fetch runs under: its own deadline, plus the edge
+ * request's abort when there is one (fanned out by `RestClient`, see
+ * `callSignal` there).
+ *
+ * WHY abort listeners and not `AbortSignal.any`: `any` holds its sources only
+ * weakly, so the `AbortSignal.timeout` source (referenced by nothing else) can
+ * be collected along with its timer, and a 2xx body that stalls then hangs
+ * forever instead of failing as `DOWNSTREAM_TIMEOUT` (measured on Node 22).
+ * A listener keeps the timeout alive exactly as fetch's own listener did when
+ * it was passed alone. This also works on Node 20.0-20.2, which lack `any`.
  */
-export type DownstreamCallOutcome = 'ok' | 'http_error' | 'bad_response' | 'unreachable' | 'timeout' | 'other';
+function deadlineSignal(timeoutMs: number): CallSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const call = new AbortController();
+  const onTimeout = (): void => call.abort(timeout.reason);
+  timeout.addEventListener('abort', onTimeout, { once: true });
+  return {
+    signal: call.signal,
+    abort: (reason: unknown) => call.abort(reason),
+    release: () => timeout.removeEventListener('abort', onTimeout),
+  };
+}
+
+/**
+ * How one sent downstream call ended. The five typed failures map 1:1 onto the
+ * `extensions.code` a client sees (`aborted` = `CLIENT_CLOSED_REQUEST`: the edge
+ * client left while the call was in flight); `other` covers anything left
+ * untyped (e.g. a contract reader throwing an unexpected exception).
+ */
+export type DownstreamCallOutcome =
+  | 'ok'
+  | 'http_error'
+  | 'bad_response'
+  | 'unreachable'
+  | 'timeout'
+  | 'aborted'
+  | 'other';
 
 /**
  * One settled downstream REST call, as reported to `onDownstreamCall`. WHY so
@@ -225,6 +282,7 @@ const OUTCOME_BY_CODE: Readonly<Record<string, DownstreamCallOutcome>> = {
   DOWNSTREAM_BAD_RESPONSE: 'bad_response',
   DOWNSTREAM_UNREACHABLE: 'unreachable',
   DOWNSTREAM_TIMEOUT: 'timeout',
+  CLIENT_CLOSED_REQUEST: 'aborted',
 };
 
 type Verdict = Pick<DownstreamCallEvent, 'outcome' | 'errorCode'>;
@@ -258,6 +316,11 @@ export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
   readonly timeoutMs: number;
+  /** Calls currently in flight under the edge signal; see `callSignal`. */
+  private readonly inFlight = new Set<CallSignal>();
+  private readonly onEdgeAbort = (): void => {
+    for (const call of this.inFlight) call.abort(this.signal?.reason);
+  };
 
   /**
    * @param maxCalls Hard ceiling on calls this client may *send* (undefined =
@@ -273,6 +336,10 @@ export class RestClient {
    *   counted call passes, so once every sent call has settled, events equal
    *   `stats.total` (a call still in flight when the response is sent -- an
    *   orphaned prefetch or an error-orphaned NAIVE sibling -- fires later).
+   * @param signal The edge request's abort signal. WHY on the client: once the
+   *   caller has hung up, every later `get` is refused unsent (like a budget
+   *   refusal) and an in-flight fetch is cancelled, so a client that left stops
+   *   costing the legacy backend calls -- whatever hop, loader or batch is next.
    */
   constructor(
     private readonly baseUrl: string,
@@ -280,9 +347,18 @@ export class RestClient {
     private readonly maxCalls?: number,
     private readonly headers: Readonly<Record<string, string>> = {},
     private readonly onCall?: DownstreamCallHook,
+    private readonly signal?: AbortSignal,
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
+
+  /**
+   * Refuses a call once the edge client has gone. Runs before `track`, like
+   * the budget check, so a call never sent is never counted nor reported.
+   */
+  private checkClientPresent(path: string): void {
+    if (this.signal?.aborted) throw clientClosed(path);
   }
 
   /**
@@ -295,6 +371,33 @@ export class RestClient {
       `Downstream call budget of ${this.maxCalls} exceeded; call refused`,
       { extensions: { code: 'DOWNSTREAM_BUDGET_EXCEEDED', budget: this.maxCalls } },
     );
+  }
+
+  /**
+   * The signal for one call under this client. WHY one edge listener per
+   * client, fanned out, and not one per call: Node's EventTarget prints a
+   * `MaxListenersExceededWarning` ("possible memory leak") at 11 listeners on
+   * one signal, and a single request easily has more calls in flight (12
+   * aliased roots batched, ~15 concurrent `/reviews/by-book` under NAIVE). The
+   * listener is attached while any call is in flight and detached when the
+   * last settles, so the caller's signal is left as it was found -- we never
+   * `setMaxListeners` on an object the embedder owns.
+   */
+  private callSignal(): CallSignal {
+    const edge = this.signal;
+    if (!edge) return { signal: AbortSignal.timeout(this.timeoutMs), abort: () => undefined, release: () => undefined };
+    const call = deadlineSignal(this.timeoutMs);
+    if (edge.aborted) call.abort(edge.reason);
+    if (this.inFlight.size === 0) edge.addEventListener('abort', this.onEdgeAbort, { once: true });
+    this.inFlight.add(call);
+    return {
+      ...call,
+      release: () => {
+        call.release();
+        this.inFlight.delete(call);
+        if (this.inFlight.size === 0) edge.removeEventListener('abort', this.onEdgeAbort);
+      },
+    };
   }
 
   private track(path: string): void {
@@ -311,6 +414,7 @@ export class RestClient {
   get(path: string, params?: QueryParams): Promise<unknown>;
   get<T>(path: string, params: QueryParams | undefined, read: (body: unknown) => T): Promise<T>;
   async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
+    this.checkClientPresent(path);
     this.checkBudget();
     this.track(path);
     if (!this.onCall) return this.send(path, params, read);
@@ -347,20 +451,26 @@ export class RestClient {
       }
     }
 
-    let res: Response;
+    const { signal, release } = this.callSignal();
     try {
-      res = await fetch(url, { headers: this.headers, signal: AbortSignal.timeout(this.timeoutMs) });
-    } catch (err: unknown) {
-      throw fetchFailure(path, this.timeoutMs, err);
-    }
-    onStatus?.(res.status);
+      let res: Response;
+      try {
+        res = await fetch(url, { headers: this.headers, signal });
+      } catch (err: unknown) {
+        throw fetchFailure(path, this.timeoutMs, err, this.signal);
+      }
+      onStatus?.(res.status);
 
-    if (!res.ok) {
-      throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {
-        extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
-      });
+      if (!res.ok) {
+        throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {
+          extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
+        });
+      }
+      const text = await bodyText(path, this.timeoutMs, res, this.signal);
+      return readBody(path, res.status, text, read ?? parsedJson);
+    } finally {
+      release();
     }
-    return readBody(path, res.status, await bodyText(path, this.timeoutMs, res), read ?? parsedJson);
   }
 
   resetStats(): void {
