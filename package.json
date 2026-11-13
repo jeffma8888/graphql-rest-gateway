@@ -49,6 +49,7 @@
     "backend": "tsx src/rest-backend/standalone.ts",
     "check-backend": "tsx src/check-backend-main.ts",
     "benchmark": "tsx benchmark/benchmark.ts",
+    "bench:listener": "tsx benchmark/listener.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage"

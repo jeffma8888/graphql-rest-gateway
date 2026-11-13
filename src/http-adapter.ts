@@ -1,6 +1,5 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 
 /**
  * Node `http` ⇄ fetch bridge behind `npm start` and `GatewayServer.nodeListener`.
@@ -69,9 +68,35 @@ async function sendResponse(res: ServerResponse, response: Response, connectionC
     res.end();
     return;
   }
-  // Yoga answers with @whatwg-node ponyfill streams, which `Readable.fromWeb` rejects; both
-  // kinds are async-iterable, and `pipeline` still applies backpressure and client-abort teardown.
-  await pipeline(Readable.from(response.body as unknown as AsyncIterable<Uint8Array>), res);
+  // Yoga answers with @whatwg-node ponyfill streams, which `Readable.fromWeb` rejects; both kinds
+  // are async-iterable. Chunks are written directly: a JSON result is usually one chunk, so wrapping
+  // it in a Node Readable and a stream pipe cost about as much CPU as the whole gateway request.
+  // Throwing on a destroyed socket exits the `for await`, which runs the body iterator's `return()`.
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    if (res.destroyed) throw new Error('client disconnected mid-response');
+    if (!res.write(chunk)) await drainOrClose(res);
+  }
+  if (res.destroyed) throw new Error('client disconnected mid-response');
+  res.end();
+}
+
+/**
+ * Resolves on the first of `drain` (room to write again) or `close` (socket gone, so `drain`
+ * never comes). WHY remove the other listener: a streamed response can hit backpressure on many
+ * chunks, and a leftover `once('close')` per backpressured write would pile up on that response.
+ */
+function drainOrClose(res: ServerResponse): Promise<void> {
+  return new Promise<void>((resolve) => {
+    // `close` may already have fired, and it never fires twice.
+    if (res.destroyed) return resolve();
+    const done = (): void => {
+      res.off('drain', done);
+      res.off('close', done);
+      resolve();
+    };
+    res.once('drain', done);
+    res.once('close', done);
+  });
 }
 
 /** Never rejects: a broken client socket or a malformed request must not become an unhandled rejection. */

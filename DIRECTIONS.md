@@ -1,6 +1,26 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-94
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Re-land iter-93's `nodeListener` direct chunk writes (+13 pp edge throughput) with the throughput claim moved OUT of vitest into `npm run benchmark`; the suite keeps only deterministic pins
+    - Candidate A2 -- The quality gate's critical path drops from about 20 s to about 9 s wall: `test_iter61`'s sleep-bound shutdown tests run concurrently, each on its own backend and gateway
+    - Candidate A3 -- The lookahead gate is computed once per execution, not on every by-id root and every `Book.author` resolve (row 67): about −18 % wall on a 60-root dashboard at an unchanged call count
+    - Candidate B1 -- Two README figures the suite pins as stale literals: coverage under-claims by ~10 pp ("~84/86/89%" vs measured 95.5/96.65/96.7%) and §7 says the sample query "costs **351**" while the live gateway reports 356. Re-derive both and replace each literal pin with a check against its source (row 29)
+    - Candidate B2 -- README §4 says its benchmark transcript is "from a real `npm run benchmark` run", but the block is not what the command prints. Regenerate it and pin it with an in-process doc-test that masks the timings
+    - Candidate B3 -- README §10 calls the bundled backend's `/__stats` counter the OpenTelemetry "placeholder seam", contradicting §7 Observability, which documents `onDownstreamCall` as the operator per-call hook. Fix the bullet (row 80) and guard that every seam §10 names is exported by the package
+    winner: A1
+    ship: pending (not yet decided)
+  iter-93
+    lenses: simplification-and-deletion), performance-and-throughput)
+    - Candidate A1 -- `npm start` mounts `gateway.nodeListener` and delegates its drain to `gateway.close()`, deleting the CLI's private second copy of the drain-aware listener
+    - Candidate A2 -- One drain primitive: `close()` is `settleWithin([...fetches, ...writes], 5 s)`, deleting the `inFlight` counter, `drainResolve`, the per-phase deadline arithmetic and the listener's `flushed()`/`idle()` pair
+    - Candidate A3 -- `RestClient` shrinks: one transport `try` around fetch + 2xx body (iter-90's `bodyText` helper deleted) and the caller-less `resetStats()` deleted
+    - Candidate B1 -- `gateway.nodeListener` stops costing 27 % edge throughput against `createServer(gw.yoga)`: write the response body chunks directly instead of `pipeline(Readable.from(body), res)`
+    - Candidate B2 -- The lookahead gate is computed once per execution, not on every by-id root and every `Book.author` resolve (row 67): −18 % wall on a 60-root dashboard at an unchanged call count
+    - Candidate B3 -- Compress GraphQL responses the client accepts (row 66): the 5-author page goes from 2 067 B to 480 B on the wire (−77 %) for about 16 µs CPU
+    winner: B1
+    ship: REVERTED
   iter-92
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- Library embedders get the drain-aware Node listener: `gateway.nodeListener` (the bridge `npm start` already uses), and README stops telling them to mount the raw `gateway.yoga`, which keeps answering 200 after `close()`
@@ -10,7 +30,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One transport `try` in `RestClient.send`: read the 2xx body inside the same `try` that wraps `fetch`, and delete iter-90's `bodyText` helper and its second `fetchFailure` call site
     - Candidate B3 -- Delete `RestClient.resetStats()`, a public method with zero callers anywhere
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 84bd22f
   iter-91
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- `close()` is idempotent and lets the process exit once drained: no 5 s orphan drain timer, and a second `close()` cannot strand the first (row 30, timer and shared-drain half)
@@ -591,4 +611,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-59 scouted iterations
+61 scouted iterations

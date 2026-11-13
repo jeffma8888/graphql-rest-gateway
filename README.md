@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1535%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1566%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -188,7 +188,7 @@ server.closeAllConnections(); // safe: close() waited for nodeListener's respons
 await app.close(); // stop the bundled backend too, so the script exits
 ```
 
-`close()` is idempotent: repeated `close()` calls share one drain, so every call (from both SIGINT and SIGTERM handlers, say) resolves when the last in-flight request settles, or at the 5 s cap if one is stuck. Once the drain settles, no gateway timer keeps the process alive, so a script or test teardown that awaits `close()` can exit without calling `process.exit`. If the cap released `close()`, the stuck downstream fetch still holds the process until `downstreamTimeoutMs` aborts it. `close()` also waits for responses `nodeListener` has started to finish writing, under the same 5 s cap, so `server.closeAllConnections()` after `await gateway.close()` truncates nothing, unless the 5 s cap released `close()` first. A raw `gateway.yoga` mount bypasses the drain: it still answers after `close()`, with no 503, and `close()` cannot wait for it, so mount `gateway.nodeListener` instead.
+`close()` is idempotent: repeated `close()` calls share one drain, so every call (from both SIGINT and SIGTERM handlers, say) resolves when the last in-flight request settles, or at the 5 s cap if one is stuck. Once the drain settles, no gateway timer keeps the process alive, so a script or test teardown that awaits `close()` can exit without calling `process.exit`. If the cap released `close()`, the stuck downstream fetch still holds the process until `downstreamTimeoutMs` aborts it. `close()` also waits for responses `nodeListener` has started to finish writing, under the same 5 s cap, so `server.closeAllConnections()` after `await gateway.close()` truncates nothing, unless the 5 s cap released `close()` first. A raw `gateway.yoga` mount bypasses the drain: it still answers after `close()`, with no 503, and `close()` cannot wait for it, so mount `gateway.nodeListener` instead. `nodeListener` writes Yoga's response straight to the socket, and `npm run bench:listener` checks that it keeps at least 0.80× the req/s of a raw `gateway.yoga` mount.
 
 #### Options reference
 
@@ -366,7 +366,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1535 tests across 62 files (Vitest), all green:
+`npm test` — 1566 tests across 63 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -397,6 +397,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Typed body-read failures** (`test_iter90_behavior.test.ts`): a 2xx whose body stalls past `downstreamTimeoutMs` answers `DOWNSTREAM_TIMEOUT` (never before the deadline) and one whose connection resets mid-body answers `DOWNSTREAM_UNREACHABLE`, each with 1 downstream call, no leaked host, port or raw error, matching `onDownstreamCall` events (status 200) and the same code from `/readyz`; a healthy sibling root keeps its data, and the header-stall, closed-port, 500, html and off-contract paths are unchanged.
 - **Idempotent shutdown** (`test_iter91_behavior.test.ts`): concurrent and repeated `close()` calls share one drain and each resolves once the last in-flight request settles (not at the 5 s cap), a stuck request still releases `close()` at the cap, a drained child process exits by itself without `process.exit`, and `/graphql`, `/healthz` and `/readyz` still answer 503 at 0 downstream calls after `close()`.
 - **Drain-aware Node listener** (`test_iter92_behavior.test.ts`): `http.createServer(gateway.nodeListener)` serves `/graphql`, `/healthz` and `/readyz` exactly like `gateway.fetch`, `close()` waits for an in-flight listener request, requests during and after `close()` get 503 with `connection: close` at 0 downstream calls, a 20-query batch survives `closeAllConnections()` right after `await close()`, and a stuck request releases `close()` at one shared 5 s cap.
+- **Fast drain-aware listener** (`test_iter94_behavior.test.ts`): `createServer(gateway.nodeListener)` answers byte-identically to `gateway.fetch` (status, `content-type`, `content-length`, body) for queries, GETs, `/healthz`, `/readyz`, a 400 and a `NOT_FOUND`, keeps 3 downstream calls, delivers a paused client's large batch whole, leaks no listeners or warnings over 200 keep-alive requests, contains a client abort mid-response and keeps the drain contract. Its 0.80× throughput floor against a raw `createServer(gateway.yoga)` mount is enforced by `npm run bench:listener`, not by `npm test`; the suite only checks that the script passes at `--threshold 0` and fails with exit code 1 at `--threshold 99`.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
@@ -409,6 +410,8 @@ expect(batched.data).toEqual(naive.data); // identical results, fewer calls
 ```
 
 If someone deletes a loader or sneaks a fetch into a resolver, the batched count blows up and this test fails.
+
+Same-process throughput ratios are not load-invariant in the parallel suite (the two mounts do not slow down together on a busy host), so they live in serial bench scripts such as `npm run bench:listener`, run on a quiet host, never in `npm test`.
 
 Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% functions**. Uncovered lines are mostly defensive error branches.
 
