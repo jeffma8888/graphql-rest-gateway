@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1515%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1535%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -151,18 +151,22 @@ Exit codes: `0` when all 5 routes pass, `1` on any mismatch (including an unreac
 The package exports a library entry point so you can embed the gateway in your own server. The built package (`npm run build`, run automatically by `npm pack`) is verified by importing it by name from plain Node ESM and from a NodeNext TypeScript consumer, with real types and `schema.graphql` found at the package root:
 
 ```ts
+import { createServer } from 'node:http';
 import { createGateway, buildBackend } from 'graphql-rest-gateway';
 
 // Boot the bundled REST backend (or point to your own)
 const { app } = buildBackend({ latencyMs: 0 });
 const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 
-// Create a gateway (returns { yoga, fetch, close })
+// Create a gateway (returns { yoga, fetch, nodeListener, close })
 const gateway = createGateway({ restBaseUrl: baseUrl });
 
-// Use gateway.fetch() directly or mount gateway.yoga on any Node HTTP server.
-// A raw gateway.yoga mount bypasses the shutdown drain; for drain-aware embedding
-// (503 after close(), in-flight requests counted), serve every request through gateway.fetch.
+// Serve it from your own Node HTTP server: nodeListener routes every request
+// through gateway.fetch, so close() drains it (503 after close(), in-flight requests counted).
+const server = createServer(gateway.nodeListener);
+server.listen(4000);
+
+// Or call gateway.fetch() directly.
 const res = await gateway.fetch('http://localhost/graphql', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -179,9 +183,12 @@ const ready = await gateway.fetch('http://localhost/readyz');
 
 // Graceful shutdown (drains in-flight requests, then resolves)
 await gateway.close();
+server.close();
+server.closeAllConnections(); // safe: close() waited for nodeListener's responses to finish writing
+await app.close(); // stop the bundled backend too, so the script exits
 ```
 
-`close()` is idempotent: repeated `close()` calls share one drain, so every call (from both SIGINT and SIGTERM handlers, say) resolves when the last in-flight request settles, or at the 5 s cap if one is stuck. Once the drain settles, no gateway timer keeps the process alive, so a script or test teardown that awaits `close()` can exit without calling `process.exit`. If the cap released `close()`, the stuck downstream fetch still holds the process until `downstreamTimeoutMs` aborts it.
+`close()` is idempotent: repeated `close()` calls share one drain, so every call (from both SIGINT and SIGTERM handlers, say) resolves when the last in-flight request settles, or at the 5 s cap if one is stuck. Once the drain settles, no gateway timer keeps the process alive, so a script or test teardown that awaits `close()` can exit without calling `process.exit`. If the cap released `close()`, the stuck downstream fetch still holds the process until `downstreamTimeoutMs` aborts it. `close()` also waits for responses `nodeListener` has started to finish writing, under the same 5 s cap, so `server.closeAllConnections()` after `await gateway.close()` truncates nothing, unless the 5 s cap released `close()` first. A raw `gateway.yoga` mount bypasses the drain: it still answers after `close()`, with no 503, and `close()` cannot wait for it, so mount `gateway.nodeListener` instead.
 
 #### Options reference
 
@@ -359,7 +366,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1515 tests across 61 files (Vitest), all green:
+`npm test` — 1535 tests across 62 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -389,6 +396,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Ordered nested lists** (`test_iter89_behavior.test.ts`): `books(orderBy: YEAR_ASC|YEAR_DESC)` and `reviews(orderBy: RATING_DESC|RATING_ASC)` sort before `first` (an author's latest book, every book's top review), keep 3 batched / 21 naive calls and the same admission cost, share one call across aliases with different orders without reordering the cached list, ask `/reviews/by-book` only for the kept books, and refuse unknown values at 0 downstream calls.
 - **Typed body-read failures** (`test_iter90_behavior.test.ts`): a 2xx whose body stalls past `downstreamTimeoutMs` answers `DOWNSTREAM_TIMEOUT` (never before the deadline) and one whose connection resets mid-body answers `DOWNSTREAM_UNREACHABLE`, each with 1 downstream call, no leaked host, port or raw error, matching `onDownstreamCall` events (status 200) and the same code from `/readyz`; a healthy sibling root keeps its data, and the header-stall, closed-port, 500, html and off-contract paths are unchanged.
 - **Idempotent shutdown** (`test_iter91_behavior.test.ts`): concurrent and repeated `close()` calls share one drain and each resolves once the last in-flight request settles (not at the 5 s cap), a stuck request still releases `close()` at the cap, a drained child process exits by itself without `process.exit`, and `/graphql`, `/healthz` and `/readyz` still answer 503 at 0 downstream calls after `close()`.
+- **Drain-aware Node listener** (`test_iter92_behavior.test.ts`): `http.createServer(gateway.nodeListener)` serves `/graphql`, `/healthz` and `/readyz` exactly like `gateway.fetch`, `close()` waits for an in-flight listener request, requests during and after `close()` get 503 with `connection: close` at 0 downstream calls, a 20-query batch survives `closeAllConnections()` right after `await close()`, and a stuck request releases `close()` at one shared 5 s cap.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

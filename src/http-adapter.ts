@@ -3,7 +3,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 /**
- * Node `http` ⇄ fetch bridge for `npm start`. WHY it exists: mounting
+ * Node `http` ⇄ fetch bridge behind `npm start` and `GatewayServer.nodeListener`.
+ * Internal: not in `package.json` `exports`. WHY it exists: mounting
  * `gateway.yoga` directly on `createServer` bypasses `GatewayServer.fetch`,
  * the only path that refuses new work (503) and counts in-flight requests
  * during shutdown. Routing every request through a fetch handler keeps that
@@ -24,6 +25,11 @@ export interface DrainAwareListener {
    * destroys sockets, which would truncate a response still being flushed.
    */
   flushed(timeoutMs: number): Promise<void>;
+  /**
+   * True when no response is still being handled. WHY: lets `close()` keep its
+   * idle fast path (resolve at once, arm no timer) when nothing is writing.
+   */
+  idle(): boolean;
 }
 
 /** `new Request` rejects a body on these methods. */
@@ -120,5 +126,6 @@ export function createDrainAwareListener(fetch: FetchHandler, isClosing: () => b
       open.add(handled);
     },
     flushed: (timeoutMs) => settleWithin([...open], timeoutMs),
+    idle: () => open.size === 0,
   };
 }

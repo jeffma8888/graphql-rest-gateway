@@ -1,3 +1,4 @@
+import type { RequestListener } from 'node:http';
 import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, validate, GraphQLError, type DocumentNode, type ExecutionResult } from 'graphql';
 import { schema } from './schema.js';
@@ -10,6 +11,7 @@ import {
 } from './datasources/rest-client.js';
 import { AuthorDataSource } from './datasources/index.js';
 import type { LoaderOptions } from './loaders.js';
+import { createDrainAwareListener } from '../http-adapter.js';
 import { depthLimit } from './security/depth-limit.js';
 import {
   complexityLimit,
@@ -65,6 +67,14 @@ type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
 export interface GatewayServer {
   yoga: YogaInstance;
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  /**
+   * Drain-aware listener for `http.createServer`: every request goes through
+   * `fetch`, so after `close()` it answers 503, and every response then carries
+   * `connection: close`. WHY not mount `yoga` directly: that bypasses `fetch`,
+   * so it keeps serving after `close()` and `close()` cannot wait for it.
+   * The same function on every read, so it can be passed and compared freely.
+   */
+  nodeListener: RequestListener;
   close(): Promise<void>;
 }
 
@@ -402,8 +412,11 @@ query Sample {
     },
   });
 
-  return {
+  // `gateway` is read lazily, on the first request, so referencing it before its declaration is safe.
+  const drainListener = createDrainAwareListener((request) => gateway.fetch(request), () => shuttingDown);
+  const gateway: GatewayServer = {
     yoga,
+    nodeListener: drainListener.listener,
     fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       if (shuttingDown) {
         return Promise.resolve(new Response(null, { status: 503 }));
@@ -424,20 +437,29 @@ query Sample {
     // helper) must not overwrite the first caller's resolver and strand it
     // until the cap. WHY clearTimeout: an uncleared cap timer keeps a drained
     // process alive for the rest of the 5 s, which embedders that await
-    // close() and expect Node to exit would pay as a silent tail.
+    // close() and expect Node to exit would pay as a silent tail. WHY one
+    // deadline for fetches AND nodeListener writes: an embedder calls
+    // closeAllConnections() right after close(), which would truncate a body
+    // still being written, yet a stuck request must not cost 5 s per phase.
     close(): Promise<void> {
       shuttingDown = true;
       if (!drainPromise) {
-        if (inFlight === 0) return Promise.resolve();
-        drainPromise = new Promise<void>((resolve) => {
-          const cap = setTimeout(resolve, DRAIN_TIMEOUT_MS);
-          drainResolve = () => {
-            clearTimeout(cap);
-            resolve();
-          };
-        });
+        if (inFlight === 0 && drainListener.idle()) return Promise.resolve();
+        const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+        const fetches =
+          inFlight === 0
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                const cap = setTimeout(resolve, DRAIN_TIMEOUT_MS);
+                drainResolve = () => {
+                  clearTimeout(cap);
+                  resolve();
+                };
+              });
+        drainPromise = fetches.then(() => drainListener.flushed(Math.max(0, deadline - Date.now())));
       }
       return drainPromise;
     },
   };
+  return gateway;
 }

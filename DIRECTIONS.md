@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-92
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- Library embedders get the drain-aware Node listener: `gateway.nodeListener` (the bridge `npm start` already uses), and README stops telling them to mount the raw `gateway.yoga`, which keeps answering 200 after `close()`
+    - Candidate A2 -- `--help` / `-h` on both installed bins prints every environment variable the command reads (name, default, bound) and exits 0, with a guard that fails when `parseEnv` reads a variable the help omits
+    - Candidate A3 -- `check-backend --json` gives each route a machine-readable `code`, using the gateway's own vocabulary, so CI scripts stop regex-matching `problem` prose (iter-91 B1, deferred, not rejected)
+    - Candidate B1 -- One drain primitive: `gateway.close()` waits on a `Set` of in-flight fetches via the same `settleWithin` that `http-adapter.ts` already ships, so the iter-91 hand-written copy goes away
+    - Candidate B2 -- One transport `try` in `RestClient.send`: read the 2xx body inside the same `try` that wraps `fetch`, and delete iter-90's `bodyText` helper and its second `fetchFailure` call site
+    - Candidate B3 -- Delete `RestClient.resetStats()`, a public method with zero callers anywhere
+    winner: A1
+    ship: pending (not yet decided)
   iter-91
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- `close()` is idempotent and lets the process exit once drained: no 5 s orphan drain timer, and a second `close()` cannot strand the first (row 30, timer and shared-drain half)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `check-backend` honours the `DOWNSTREAM_TIMEOUT_MS` that `npm start` reads, so a green pre-flight means the gateway will not time out, and a bad value exits 2 like it does for `npm start` (row 42, timeout half)
     - Candidate B3 -- The package entry exports `checkBackend` (with the `CheckReport`/`RouteResult` types and `CONTRACT_ROUTES`), so a programmatic `createGateway` user can pre-flight their backend in their own boot code
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED b183854
   iter-90
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Bulk `Query.authorsByIds(ids: [ID!]!): [Author]!`, the author twin of the shipped `books(ids:)`, in `BY_ID_ROOTS` from day one
@@ -581,4 +591,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-58 scouted iterations
+59 scouted iterations
