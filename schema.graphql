@@ -6,6 +6,14 @@
 # The gateway fronts a REST backend exposing authors -> books -> reviews.
 # ============================================================================
 
+"""
+Incremental delivery: the fragment's fields arrive in a later part of a
+`multipart/mixed` or `text/event-stream` reply. Deferred fields are priced and
+batched exactly like inline ones. A JSON-only client is refused with a typed
+DEFER_NOT_ACCEPTED (406) before any downstream call. `@stream` is not supported.
+"""
+directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
 type Query {
   """
   Relay-style cursor-paginated list of authors.

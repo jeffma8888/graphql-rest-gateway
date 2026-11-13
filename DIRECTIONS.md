@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-95
+    lenses: narrative-and-docs, new-capability
+    - Candidate A1 -- Re-derive the README figures the suite pins as stale literals (coverage "~84/86/89%" against a measured 94.45/95.92/95.65 %, and §7's "351" against a live 356), and replace each literal pin with a check against its source (row 29)
+    - Candidate A2 -- The §3 "Other entry points" table omits half of the product's own quality gate (`npm run typecheck`) and iter-94's `npm run bench:listener`, and says `npm run build` "type-checks" when it checks only `src/`. test_iter80 pins the stale table byte-for-byte. Replace that pin with a guard: every `package.json` script has a row, and every row names a real script
+    - Candidate A3 -- The Programmatic-usage snippet no longer hangs (it exits 0 in 0.83 s, measured), but PRODUCT.md row 46 still says "hangs >30 s today", and nothing runs the block. Add a doc-test that executes the README snippet as written and close row 46
+    - Candidate B1 -- Incremental delivery: the SDL declares `@defer`, so a client gets the fast part of a query after 1 hop (54 ms) instead of waiting for all 3 (158 ms), at an unchanged downstream call count
+    - Candidate B2 -- The gateway's first write path: `Mutation.addReview(bookId: ID!, rating: Int!, body: String!): Review!` proxied to `POST /reviews`, with the request's `reviewsByBookId` key cleared so the same response shows the write
+    - Candidate B3 -- Relay refetch: `interface Node { id: ID! }` on Author and Book, plus `Query.node(id: ID!): Node` / `nodes(ids: [ID!]!): [Node]!`, resolved by probing both by-id loaders in one tick, so any N ids cost at most 2 calls in 1 hop (row 49)
+    winner: B1
+    ship: pending (not yet decided)
   iter-94
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Re-land iter-93's `nodeListener` direct chunk writes (+13 pp edge throughput) with the throughput claim moved OUT of vitest into `npm run benchmark`; the suite keeps only deterministic pins
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- README §4 says its benchmark transcript is "from a real `npm run benchmark` run", but the block is not what the command prints. Regenerate it and pin it with an in-process doc-test that masks the timings
     - Candidate B3 -- README §10 calls the bundled backend's `/__stats` counter the OpenTelemetry "placeholder seam", contradicting §7 Observability, which documents `onDownstreamCall` as the operator per-call hook. Fix the bullet (row 80) and guard that every seam §10 names is exported by the package
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 8aef7b5
   iter-93
     lenses: simplification-and-deletion), performance-and-throughput)
     - Candidate A1 -- `npm start` mounts `gateway.nodeListener` and delegates its drain to `gateway.close()`, deleting the CLI's private second copy of the drain-aware listener
@@ -611,4 +621,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-61 scouted iterations
+62 scouted iterations

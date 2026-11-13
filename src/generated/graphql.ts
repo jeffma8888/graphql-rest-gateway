@@ -265,6 +265,13 @@ export type ResolversParentTypes = ResolversObject<{
   String: Scalars['String']['output'];
 }>;
 
+export type DeferDirectiveArgs = {
+  if?: Scalars['Boolean']['input'];
+  label?: Maybe<Scalars['String']['input']>;
+};
+
+export type DeferDirectiveResolver<Result, Parent, ContextType = GatewayContext, Args = DeferDirectiveArgs> = DirectiveResolverFn<Result, Parent, ContextType, Args>;
+
 export type AuthorResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Author'] = ResolversParentTypes['Author']> = ResolversObject<{
   bio?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   books?: Resolver<Array<ResolversTypes['Book']>, ParentType, ContextType, Partial<AuthorBooksArgs>>;
@@ -329,3 +336,6 @@ export type Resolvers<ContextType = GatewayContext> = ResolversObject<{
   Review?: ReviewResolvers<ContextType>;
 }>;
 
+export type DirectiveResolvers<ContextType = GatewayContext> = ResolversObject<{
+  defer?: DeferDirectiveResolver<any, any, ContextType>;
+}>;

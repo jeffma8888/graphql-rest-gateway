@@ -1,5 +1,5 @@
 import type { RequestListener } from 'node:http';
-import { createYoga, type YogaServerInstance, type Plugin } from 'graphql-yoga';
+import { createYoga, isAsyncIterable, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, validate, GraphQLError, type DocumentNode, type ExecutionResult } from 'graphql';
 import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
@@ -22,6 +22,7 @@ import {
 import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
 import { parseWithTokenLimit } from './security/token-limit.js';
 import { validateGatewayOptions } from './options.js';
+import { deferAcceptPlugin } from './defer.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -227,21 +228,36 @@ function queryComplexityPlugin(maxComplexity: number, defaultListSize: number): 
         }
       }
 
+      const extensions = { queryComplexity: { cost, depth } };
       return {
         onExecuteDone({ result, setResult }) {
-          if (Symbol.asyncIterator in Object(result)) return;
-          const execResult = result as ExecutionResult;
-          setResult({
-            ...execResult,
-            extensions: {
-              ...execResult.extensions,
-              queryComplexity: { cost, depth },
+          if (!isAsyncIterable(result)) {
+            setResult(withExtensions(result, extensions));
+            return;
+          }
+          // A streamed (@defer) reply: the estimate is known up front, so it
+          // rides on the first payload, where a client reads it before any
+          // deferred part arrives.
+          let first = true;
+          return {
+            onNext({ result: payload, setResult: setPayload }) {
+              if (first) setPayload(withExtensions(payload, extensions));
+              first = false;
             },
-          });
+          };
         },
       };
     },
   };
+}
+
+/**
+ * Copies one result (or one streamed payload) with `extra` merged into its
+ * `extensions`. WHY one helper for both shapes: a plain reply and a @defer
+ * payload must carry the extension keys in the same order and form.
+ */
+function withExtensions(result: ExecutionResult, extra: Record<string, unknown>): ExecutionResult {
+  return { ...result, extensions: { ...result.extensions, ...extra } };
 }
 
 /**
@@ -274,17 +290,22 @@ function downstreamCallsPlugin(): Plugin<GatewayContext> {
   return {
     onExecute({ args }) {
       const { restClient } = args.contextValue;
+      const stamp = (result: ExecutionResult): ExecutionResult =>
+        withExtensions(result, { downstreamCalls: { total: restClient.stats.total } });
       return {
         onExecuteDone({ result, setResult }) {
-          if (Symbol.asyncIterator in Object(result)) return;
-          const execResult = result as ExecutionResult;
-          setResult({
-            ...execResult,
-            extensions: {
-              ...execResult.extensions,
-              downstreamCalls: { total: restClient.stats.total },
+          if (!isAsyncIterable(result)) {
+            setResult(stamp(result));
+            return;
+          }
+          // A streamed (@defer) reply: the count is only final once every
+          // deferred part has resolved, so it rides on the last payload
+          // (`hasNext: false`) and on no earlier one.
+          return {
+            onNext({ result: payload, setResult: setPayload }) {
+              if ((payload as { hasNext?: boolean }).hasNext === false) setPayload(stamp(payload));
             },
-          });
+          };
         },
       };
     },
@@ -310,10 +331,9 @@ function badUserInputPlugin(): Plugin {
     onExecute() {
       return {
         onExecuteDone({ result, setResult }) {
-          if (Symbol.asyncIterator in Object(result)) return;
-          const execResult = result as ExecutionResult;
-          if (execResult.data !== undefined || !execResult.errors?.length) return;
-          setResult({ ...execResult, errors: execResult.errors.map(withBadUserInputCode) });
+          if (isAsyncIterable(result)) return;
+          if (result.data !== undefined || !result.errors?.length) return;
+          setResult({ ...result, errors: result.errors.map(withBadUserInputCode) });
         },
       };
     },
@@ -384,6 +404,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
       healthzPlugin(),
       readyzPlugin(opts.restBaseUrl, opts.downstreamTimeoutMs),
       securityPlugin(maxDepth, maxComplexity),
+      deferAcceptPlugin(),
       queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),
       badUserInputPlugin(),
