@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1647%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1695%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -112,6 +112,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
 | `MAX_DOWNSTREAM_CALLS` | positive integer → `maxDownstreamCalls` | unset → unlimited |
 | `FORWARD_HEADERS` | comma-separated header names → `forwardHeaders` (whitespace trimmed, empty entries ignored) | unset → forward nothing |
 | `MAX_BATCH_SIZE` | positive integer → `maxBatchSize` | unset → batching off |
+| `GRAPHQL_PATH` | absolute path → `graphqlEndpoint` (no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`; not `/healthz` or `/readyz`) | `/graphql` |
 
 Two-terminal example (the backend runs in its own process, and the gateway fronts it):
 
@@ -208,6 +209,8 @@ app.route({
 
 The listener streams the request itself whenever the stream is still unread, even if `req.body` is set. Only when a host has already read the whole stream (as Fastify and Express's `express.json()` do) does it rebuild the POST body from `req.body`: a string or `Buffer` is used as-is, and a parsed JSON object (or batch array) is re-serialised when `content-type` is `application/json` or `application/*+json`. The original `content-length` header is not forwarded, because the rebuilt bytes may differ in length from the wire bytes. With Express, call `gateway.nodeListener(req, res)` from a route after `express.json()`, `express.text()` or `express.raw()`. A consumed body that cannot be rebuilt (no `req.body`, a non-string scalar, or a parsed urlencoded or multipart object) gets HTTP 500 with `connection: close`, `{"errors":[{"message":"request body already consumed by the host server: ...","extensions":{"code":"REQUEST_BODY_CONSUMED"}}]}` and no downstream call; after `close()` it gets the drain's 503 instead.
 
+A host prefix reaches the gateway unstripped: under Fastify's `app.register(plugin, { prefix: '/api' })` the route above receives `/api/graphql`, which the default endpoint matches only for POST, so GET queries and SSE would 404. Pass the full public path, `createGateway({ restBaseUrl, graphqlEndpoint: '/api/graphql' })` (env `GRAPHQL_PATH=/api/graphql`), to serve every method there. `/healthz` and `/readyz` stay at the root path; they are not moved under the prefix.
+
 #### Options reference
 
 **`GatewayOptions`** — passed to `createGateway(opts)`:
@@ -223,6 +226,7 @@ The listener streams the request itself whenever the stream is still unread, eve
 | `forwardHeaders` | `readonly string[]` | `[]` (none) | Edge request headers (case-insensitive) copied onto every downstream REST call of the same request, e.g. `['authorization', 'x-request-id']`; invalid or hop-by-hop names throw |
 | `maxBatchSize` | `number` | unset → batching off | Opt-in request batching: a POST whose JSON body is an array of up to this many operations is served as one batch sharing one loader set and one `maxDownstreamCalls` budget; a larger batch gets HTTP 413 (positive integer, else `RangeError`) |
 | `onDownstreamCall` | `(event: DownstreamCallEvent) => void` | unset → no hook | Operator hook called once per downstream REST call sent, after it settles, with `{ route, status, durationMs, outcome, errorCode }`; never awaited, throws and rejections are swallowed (a function, else `TypeError`) |
+| `graphqlEndpoint` | `string` | `/graphql` | Path at which GraphQL GET, POST, SSE and GraphiQL are served, e.g. `/api/graphql` under a host prefix; the old `/graphql` then 404s, and `/healthz` and `/readyz` stay at the root (absolute path, no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`, not `/healthz` or `/readyz`, else `TypeError`) |
 
 `createGateway` validates the whole object synchronously, before anything is built: an unknown key throws `TypeError` with a did-you-mean hint (`maxComplexty` → `maxComplexity`), even when its value is `undefined`, and an explicit `undefined` value means omitted. Limits are unlimited only by omission (`maxDownstreamCalls`) or default (`maxDepth` 10, `maxComplexity` 1000); `NaN`/`Infinity` are rejected.
 
@@ -390,7 +394,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1647 tests across 66 files (Vitest), all green:
+`npm test` — 1695 tests across 67 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.

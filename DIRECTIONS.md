@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-98
+    lenses: integration-and-adoption
+    - Candidate A1 -- A host-prefixed mount works for every method: a `graphqlEndpoint` option (`GRAPHQL_PATH` for `npm start`) makes GET queries, EventSource SSE and GraphiQL answer at, for example, `/api/graphql`, not POST alone
+    - Candidate A2 -- `/readyz` can say "ready" in front of an auth-required legacy backend: an opt-in probe credential (`readinessHeaders`, `READYZ_HEADERS` for `npm start`) is sent only on the probe's single call (row 57)
+    - Candidate A3 -- `npm start` consults the shipped pre-flight: `PREFLIGHT=warn|fail` runs `checkBackend` before listening, so a dead or off-contract `REST_BASE_URL` is named at boot instead of on the first query (row 41)
+    - Candidate B1 -- One drain owner: `npm start` mounts `gateway.nodeListener`, and `close()` becomes a single `settleWithin` over fetches and then writes, deleting the CLI's second listener and the `inFlight`/`drainResolve` counter machinery
+    - Candidate B2 -- One content guard for the N+1 oracle replaces about 20 `git show HEAD:` / `git status` byte-copies, which catch a committed weakening only 2 times out of 25 and turn the suite red outside a git checkout (row 77)
+    - Candidate B3 -- One positive-integer rule: `maxBatchSize` goes through options.ts `assertPositiveInt`, server.ts's private `validateMaxBatchSize` is deleted, and so is `RestClient.resetStats()`, which has no callers (row 60, batch half, plus an iter-92 B3 rider)
+    winner: A1
+    ship: pending (not yet decided)
   iter-97
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- `close()` cancels what drain cannot finish: an in-flight `/readyz` aborts at once, and leftover downstream fetches abort at the 5 s cap, so the process exits in about 5 s instead of 30.5 s (row 30, abort half)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One importable error-code vocabulary: frozen `GATEWAY_ERROR_CODES` and `type GatewayErrorCode` from the entry, with `DownstreamCallEvent.errorCode` narrowed from `string | null` (row 58)
     - Candidate B3 -- The gateway mounts under an existing service's path: a `graphqlEndpoint` option (`GRAPHQL_PATH` for `npm start`) makes GET, POST and GraphiQL all answer at, e.g., `/api/graphql`, instead of POST-only by accident
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED ccdf7c6
   iter-96
     lenses: new-capability, hardening/DX
     - Candidate A1 -- `@stream` on list fields: one SDL line streams list items over the row 93 multipart/SSE path at unchanged calls, and a JSON-only client gets a typed 406 at 0 calls
@@ -641,4 +651,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-64 scouted iterations
+65 scouted iterations

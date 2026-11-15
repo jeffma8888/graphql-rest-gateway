@@ -28,6 +28,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   forwardHeaders: true,
   maxBatchSize: true,
   onDownstreamCall: true,
+  graphqlEndpoint: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -148,6 +149,33 @@ function assertFunction(key: string, value: unknown): void {
   throw new TypeError(`${key} must be a function, got ${describe(value)}`);
 }
 
+/**
+ * One or more `/segment`s of RFC 3986 path characters: no empty segment, so no
+ * bare `/` and no trailing slash, and no `?`, `#` or whitespace, which Yoga
+ * would never match against a request pathname. The URLPattern metacharacters
+ * `:` `*` `(` `)` `+` are excluded too: Yoga hands the endpoint to
+ * `new URLPattern({ pathname })`, so `/a(b` would 500 every other path and
+ * `/api/*` would silently become a wildcard route.
+ */
+const ENDPOINT_PATH = /^(?:\/[A-Za-z0-9\-._~!$&',;=@%]+)+$/;
+/** The probes stay at the root; an endpoint there would shadow one of them. */
+const RESERVED_PATHS: readonly string[] = ['/healthz', '/readyz'];
+
+/**
+ * WHY validated here: Yoga accepts any string, so a relative `graphql` or a
+ * `/api/graphql/` would boot fine and then 404 every request at 0 calls.
+ * Exported so the CLI rejects `GRAPHQL_PATH` with the same rule, under its own name.
+ */
+export function assertGraphqlEndpoint(value: unknown, name: string = 'graphqlEndpoint'): void {
+  if (value === undefined) return;
+  if (typeof value !== 'string' || !ENDPOINT_PATH.test(value)) {
+    throw new TypeError(`${name} must be an absolute path such as /api/graphql (no trailing slash, query, fragment or URLPattern syntax : * ( ) +), got ${describe(value)}`);
+  }
+  if (RESERVED_PATHS.includes(value)) {
+    throw new TypeError(`${name} must not be ${RESERVED_PATHS.join(' or ')} (reserved for the probes), got ${describe(value)}`);
+  }
+}
+
 /** Throws `TypeError`/`RangeError` naming the offending key; called first thing in `createGateway`. */
 export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOptions {
   assertObject(opts);
@@ -158,4 +186,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertPositiveInt('downstreamTimeoutMs', opts.downstreamTimeoutMs, MAX_TIMEOUT_MS);
   assertLoaderOptions(opts.loaderOptions);
   assertFunction('onDownstreamCall', opts.onDownstreamCall);
+  assertGraphqlEndpoint(opts.graphqlEndpoint);
 }

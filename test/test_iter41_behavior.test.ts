@@ -60,7 +60,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
     expect(readme).toContain('`downstreamTimeoutMs`');
   });
 
-  it('GatewayOptions table has exactly 9 data rows', () => {
+  it('GatewayOptions table has exactly 10 data rows', () => {
     const optionsIdx = readme.indexOf('`GatewayOptions`');
     const nextHeadingIdx = readme.indexOf('`BackendOptions`', optionsIdx);
     const section = readme.slice(optionsIdx, nextHeadingIdx);
@@ -68,7 +68,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
       .split('\n')
       .filter((line) => line.startsWith('|') && !line.includes('---'));
     const dataRows = tableRows.slice(1);
-    expect(dataRows.length).toBe(9); // 9th row: onDownstreamCall (iter-77)
+    expect(dataRows.length).toBe(10); // 9th row: onDownstreamCall (iter-77), 10th: graphqlEndpoint (iter-98)
   });
 });
 

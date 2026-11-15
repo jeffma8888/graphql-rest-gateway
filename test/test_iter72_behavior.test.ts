@@ -44,6 +44,7 @@ const KNOWN = [
   'forwardHeaders',
   'maxBatchSize',
   'onDownstreamCall',
+  'graphqlEndpoint',
 ] as const;
 
 const AUTHOR_Q = '{ author(id:"a1"){ id name } }';
@@ -496,7 +497,7 @@ describe('EB13 - README Options table', () => {
     expect(prose).toMatch(/maxComplexity`?\s*1000/);
   });
 
-  it('the README table lists exactly the nine known keys', () => {
+  it('the README table lists exactly the ten known keys', () => {
     expect(optionsTableKeys(optionsBlock()).sort()).toEqual([...KNOWN].sort());
   });
 });
@@ -512,13 +513,14 @@ const VALID: Record<string, unknown> = {
   forwardHeaders: ['authorization'],
   maxBatchSize: 5,
   onDownstreamCall: () => undefined,
+  graphqlEndpoint: '/api/graphql',
 };
 
 describe('Drift guard - README GatewayOptions table vs validator', () => {
   const keys = optionsTableKeys(README.slice(README.indexOf('**`GatewayOptions`**'), README.indexOf('**`BackendOptions`**')));
 
   it('the table is non-empty and every row has a known valid value', () => {
-    expect(keys.length).toBe(9);
+    expect(keys.length).toBe(10);
     for (const k of keys) expect(VALID).toHaveProperty(k);
   });
 

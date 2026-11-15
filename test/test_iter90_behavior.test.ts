@@ -374,7 +374,12 @@ describe('EB8 - unchanged paths', () => {
   });
 
   it('the N+1 regression test is byte-identical to HEAD, and the only edited old test is test_iter77', () => {
-    const diff = execFileSync('git', ['diff', '--name-only', 'HEAD', '--', 'test/'], { cwd: root, encoding: 'utf8' })
+    // Pinned to the iter-90 ship commit (modified files only; its own new file is `A`), so a later
+    // iteration's uncommitted re-pin cannot turn this red. Pre-commit, it checks the working tree.
+    const git = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    const ship = git(['log', '--fixed-strings', '--grep=(foundry iter 90)', '--format=%H', '-n', '1']).trim();
+    const range = ship === '' ? ['HEAD'] : ['--diff-filter=M', `${ship}~1`, ship];
+    const diff = git(['diff', '--name-only', ...range, '--', 'test/'])
       .split('\n')
       .filter(Boolean);
     expect(diff).not.toContain('test/n-plus-1.test.ts');

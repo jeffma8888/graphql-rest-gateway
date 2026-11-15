@@ -63,6 +63,14 @@ export interface GatewayOptions {
    * lookahead prefetch can fire after its response was sent.
    */
   onDownstreamCall?: DownstreamCallHook;
+  /**
+   * Path at which GraphQL GET, POST, SSE and GraphiQL are served (default
+   * `/graphql`). WHY: a host that mounts the gateway under a prefix such as
+   * Fastify's `{ prefix: '/api' }` forwards the full `/api/graphql` URL, which
+   * the default endpoint matches only for POST. `/healthz` and `/readyz`
+   * stay at the root. An absolute path, no trailing slash, else `TypeError`.
+   */
+  graphqlEndpoint?: string;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -396,6 +404,8 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
 
   const yoga = createYoga<Record<string, never>, GatewayContext>({
     schema,
+    // Undefined keeps Yoga's own default (`/graphql`), so HEAD behaviour is unchanged.
+    graphqlEndpoint: opts.graphqlEndpoint,
     context: ({ request }) => contextFor(request),
     batching: opts.maxBatchSize === undefined ? false : { limit: opts.maxBatchSize },
     plugins: [

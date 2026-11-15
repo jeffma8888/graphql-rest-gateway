@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildBackend } from './rest-backend/server.js';
 import { createGateway, type GatewayOptions } from './gateway/server.js';
 import { validateForwardHeaders } from './gateway/datasources/rest-client.js';
-import { MAX_TIMEOUT_MS } from './gateway/options.js';
+import { MAX_TIMEOUT_MS, assertGraphqlEndpoint } from './gateway/options.js';
 import { createDrainAwareListener } from './http-adapter.js';
 
 /**
@@ -14,7 +14,7 @@ import { createDrainAwareListener } from './http-adapter.js';
 
 /** Handle to a gateway started by {@link startFromEnv}. */
 export interface RunningGateway {
-  /** `http://localhost:<actualPort>/graphql` — the real port, even when `PORT=0`. */
+  /** `http://localhost:<actualPort><GRAPHQL_PATH>` (default `/graphql`) — the real port, even when `PORT=0`. */
   url: string;
   /** External: `REST_BASE_URL` exactly as given. Bundled: the bundled backend's listen URL. */
   restBaseUrl: string;
@@ -26,6 +26,7 @@ export interface RunningGateway {
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_PORT = 4000;
+const DEFAULT_GRAPHQL_PATH = '/graphql';
 const DEFAULT_REST_LATENCY_MS = 25;
 const MAX_PORT = 65535;
 /** Same bound as the gateway's in-flight drain: a slow reader cannot hold shutdown open forever. */
@@ -104,6 +105,13 @@ function readForwardHeaders(raw: string | undefined): string[] | undefined {
   return names.length === 0 ? undefined : validateForwardHeaders(names, 'FORWARD_HEADERS');
 }
 
+/** Same rule as the library's `graphqlEndpoint`, with the message naming the variable. */
+function readGraphqlPath(raw: string | undefined): string | undefined {
+  if (isUnset(raw)) return undefined;
+  assertGraphqlEndpoint(raw, 'GRAPHQL_PATH');
+  return raw;
+}
+
 interface CliConfig {
   port: number;
   /** Undefined → boot the bundled backend. */
@@ -133,6 +141,7 @@ function parseEnv(env: Env): CliConfig {
       maxDownstreamCalls: readInt('MAX_DOWNSTREAM_CALLS', env.MAX_DOWNSTREAM_CALLS, 1),
       forwardHeaders: readForwardHeaders(env.FORWARD_HEADERS),
       maxBatchSize: readInt('MAX_BATCH_SIZE', env.MAX_BATCH_SIZE, 1),
+      graphqlEndpoint: readGraphqlPath(env.GRAPHQL_PATH),
     },
   };
 }
@@ -196,7 +205,7 @@ export async function startFromEnv(
   }
 
   let closing: Promise<void> | undefined;
-  const url = `http://localhost:${port}/graphql`;
+  const url = `http://localhost:${port}${config.limits.graphqlEndpoint ?? DEFAULT_GRAPHQL_PATH}`;
   log(
     bundled
       ? `REST backend (bundled): ${restBaseUrl} (latency ${config.restLatencyMs}ms/request)`
