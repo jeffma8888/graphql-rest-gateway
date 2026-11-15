@@ -9,7 +9,9 @@ import { Readable } from 'node:stream';
  * during shutdown. Routing every request through a fetch handler keeps that
  * bookkeeping the single source of truth; this module only adds what a socket
  * server needs on top: `connection: close` once shutdown begins, and knowing
- * when responses have finished writing so sockets can be destroyed safely.
+ * when responses have finished writing so sockets can be destroyed safely,
+ * and rebuilding a POST body that a host framework (Fastify, Express) has
+ * already read off the stream and left on `req.body`.
  */
 
 type FetchHandler = (request: Request) => Promise<Response>;
@@ -34,10 +36,60 @@ export interface DrainAwareListener {
 /** `new Request` rejects a body on these methods. */
 const BODYLESS_METHODS = new Set(['GET', 'HEAD']);
 
+/** `application/json` or any `application/*+json`, with or without parameters. */
+const JSON_CONTENT_TYPE = /^application\/([^;\s]+\+)?json\s*(;|$)/i;
+
+/**
+ * Body of the 500 for a POST whose stream a host framework already read and left nothing
+ * rebuildable. WHY a named code instead of the 400 below: the client sent a valid request;
+ * the embedding server is misconfigured, and the message tells its author how to fix it.
+ */
+const BODY_CONSUMED_REPLY = JSON.stringify({
+  errors: [
+    {
+      message:
+        'request body already consumed by the host server: leave the stream unread, or set req.body to the raw string/Buffer or the parsed JSON object',
+      extensions: { code: 'REQUEST_BODY_CONSUMED' },
+    },
+  ],
+});
+
 /** Absolute-form targets (`GET http://h/x`) parse alone; origin-form ones are resolved against Host. */
 function requestUrl(req: IncomingMessage): URL {
   const target = req.url ?? '/';
   return URL.canParse(target) ? new URL(target) : new URL(`http://${req.headers.host ?? 'localhost'}${target}`);
+}
+
+/** Thrown by {@link rebuiltBody} when a host framework consumed the body and left nothing usable. */
+class BodyConsumedError extends Error {}
+
+/**
+ * WHY: Fastify and Express (`express.json()`) read the request stream before the route
+ * handler runs and leave the result on `req.body`, so streaming `req` would yield nothing.
+ * Rebuild the bytes from it: a string or Buffer as-is, an object only when the request was
+ * JSON, since re-serialising any other parsed shape (urlencoded, multipart) would be lossy.
+ */
+function rebuiltBody(req: IncomingMessage, headers: Headers): string | Uint8Array<ArrayBuffer> {
+  const parsed = (req as IncomingMessage & { body?: unknown }).body;
+  let bytes: string | Uint8Array<ArrayBuffer>;
+  if (typeof parsed === 'string') bytes = parsed;
+  // Copy: a Buffer may be a view into a shared pool, and `BodyInit` wants a plain ArrayBuffer view.
+  else if (parsed instanceof Uint8Array) bytes = new Uint8Array(parsed);
+  else if (typeof parsed === 'object' && parsed !== null && JSON_CONTENT_TYPE.test(headers.get('content-type') ?? '')) {
+    bytes = JSON.stringify(parsed);
+  } else throw new BodyConsumedError();
+  // The rebuilt bytes are neither the wire length nor the wire encoding (a host may have inflated gzip).
+  headers.delete('content-length');
+  headers.delete('transfer-encoding');
+  headers.delete('content-encoding');
+  return bytes;
+}
+
+function requestBody(req: IncomingMessage, headers: Headers): BodyInit | null {
+  if (BODYLESS_METHODS.has(req.method ?? 'GET')) return null;
+  // Only an already-ended stream means a host read it; an unread stream always wins over `req.body`.
+  if (req.readableEnded) return rebuiltBody(req, headers);
+  return Readable.toWeb(req) as ReadableStream<Uint8Array>;
 }
 
 function toRequest(req: IncomingMessage, signal: AbortSignal): Request {
@@ -47,7 +99,7 @@ function toRequest(req: IncomingMessage, signal: AbortSignal): Request {
     headers.append(req.rawHeaders[i] as string, req.rawHeaders[i + 1] as string);
   }
   const method = req.method ?? 'GET';
-  const body = BODYLESS_METHODS.has(method) ? null : (Readable.toWeb(req) as ReadableStream<Uint8Array>);
+  const body = requestBody(req, headers);
   // `duplex: 'half'` is required by Node's fetch for a streamed body but missing from the global RequestInit type.
   const init: RequestInit & { duplex: 'half' } = { method, headers, body, signal, duplex: 'half' };
   return new Request(requestUrl(req), init);
@@ -114,7 +166,13 @@ async function handle(
   let request: Request;
   try {
     request = toRequest(req, abort.signal);
-  } catch {
+  } catch (error) {
+    // Once shutdown has begun every refusal is the drain's 503, whatever else is wrong.
+    if (error instanceof BodyConsumedError && !isClosing()) {
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8', connection: 'close' });
+      res.end(BODY_CONSUMED_REPLY);
+      return;
+    }
     // Unparseable target or Host: the client's fault, and never worth a downstream call.
     res.writeHead(isClosing() ? 503 : 400, { connection: 'close' }).end();
     return;

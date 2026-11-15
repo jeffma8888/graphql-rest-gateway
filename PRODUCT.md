@@ -49,7 +49,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 27 | Multi-root by-id lookahead prefetch (aliased `author(id)`/`book(id)` roots skip one serial hop; call counts unchanged) | done | 63 |
 | 28 | Package entry exports `NAIVE`/`BATCHED` (frozen) + `type LoaderOptions`; README export list computed-guarded; `requireAuth` prose corrected | done | 64 |
 | 29 | README cost figures derived from a live run (stale "351"; benchmark query costs 356) | planned | — |
-| 30 | Abort in-flight `/readyz` checks on `close()` (iter-74: a probe hung on a dead backend holds `close()` for the full 5 s cap; timer + shared-drain half shipped as row 90) | planned | — |
+| 30 | `close()` aborts what drain cannot finish: in-flight `/readyz` at once, leftover downstream fetches at the 5 s cap (iter-97 scout A1: 1 stuck fetch keeps the process alive 30.5 s, past k8s' 30 s grace; timer + shared-drain half shipped as row 90) | planned | — |
 | 31 | `Book.author` → `Author.books` lookahead (`book(id){author{books}}`: 3 hops → 2, call counts unchanged) | done | 70 |
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
@@ -116,3 +116,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 94 | A client that aborts its edge request stops costing downstream calls: `request.signal` reaches `RestClient` fetch (hop-1 abort 3 → 1 calls, NAIVE 21 → 1, cancelled `@defer` 3 → 2); in-flight call → `CLIENT_CLOSED_REQUEST`, hook outcome `aborted`; `/readyz` unaffected | done | 96 |
 | 95 | `@defer` accept guard honours `@skip`/`@include` (iter-95 REV/TEST follow-up): 7 skipped-defer shapes are 406 `DEFER_NOT_ACCEPTED` at 0 calls under JSON accept, should be plain 200 at 1 call (iter-96 scout B2) | planned | — |
 | 96 | `@stream` on list fields over the row 93 path (one SDL line streams at 3/3 calls); JSON-only accept → typed 406 at 0 calls (today empty 406 after 1 call); build on row 95's guard (iter-96 scout A1) | planned | — |
+| 97 | `nodeListener` inside a host framework: a POST whose stream Fastify/Express already read is rebuilt from `req.body` (string/Buffer, or JSON object); unrebuildable → JSON 500 `REQUEST_BODY_CONSUMED` at 0 calls (was empty 400); README Fastify recipe (iter-97 scout B1) | done | 97 |

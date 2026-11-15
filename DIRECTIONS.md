@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-97
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- `close()` cancels what drain cannot finish: an in-flight `/readyz` aborts at once, and leftover downstream fetches abort at the 5 s cap, so the process exits in about 5 s instead of 30.5 s (row 30, abort half)
+    - Candidate A2 -- The `@defer` accept guard honours `@skip`/`@include` the way it already honours `@defer(if:false)` (row 95)
+    - Candidate A3 -- Request-body byte cap: `maxRequestBytes` refuses an oversized POST with HTTP 413 at 0 downstream calls before it is buffered (row 35)
+    - Candidate B1 -- `gateway.nodeListener` works inside an existing Fastify or Express app: it reads a body the host framework already parsed (`req.body`) instead of answering an empty 400, and README gains a tested "Embed in an existing server" recipe
+    - Candidate B2 -- One importable error-code vocabulary: frozen `GATEWAY_ERROR_CODES` and `type GatewayErrorCode` from the entry, with `DownstreamCallEvent.errorCode` narrowed from `string | null` (row 58)
+    - Candidate B3 -- The gateway mounts under an existing service's path: a `graphqlEndpoint` option (`GRAPHQL_PATH` for `npm start`) makes GET, POST and GraphiQL all answer at, e.g., `/api/graphql`, instead of POST-only by accident
+    winner: B1
+    ship: pending (not yet decided)
   iter-96
     lenses: new-capability, hardening/DX
     - Candidate A1 -- `@stream` on list fields: one SDL line streams list items over the row 93 multipart/SSE path at unchanged calls, and a JSON-only client gets a typed 406 at 0 calls
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The `@defer` accept guard refuses only defers the executor will actually run: it honours `@skip`/`@include`
     - Candidate B3 -- Options are validated for the gateway's lifetime: `createGateway` snapshots `opts`, so mutating the caller's object after boot cannot bypass validation or bring back N+1 (row 50, snapshot half)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 3d50b9f
   iter-95
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- Re-derive the README figures the suite pins as stale literals (coverage "~84/86/89%" against a measured 94.45/95.92/95.65 %, and §7's "351" against a live 356), and replace each literal pin with a check against its source (row 29)
@@ -631,4 +641,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-63 scouted iterations
+64 scouted iterations

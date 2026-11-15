@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1618%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1647%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -190,6 +190,24 @@ await app.close(); // stop the bundled backend too, so the script exits
 
 `close()` is idempotent: repeated `close()` calls share one drain, so every call (from both SIGINT and SIGTERM handlers, say) resolves when the last in-flight request settles, or at the 5 s cap if one is stuck. Once the drain settles, no gateway timer keeps the process alive, so a script or test teardown that awaits `close()` can exit without calling `process.exit`. If the cap released `close()`, the stuck downstream fetch still holds the process until `downstreamTimeoutMs` aborts it. `close()` also waits for responses `nodeListener` has started to finish writing, under the same 5 s cap, so `server.closeAllConnections()` after `await gateway.close()` truncates nothing, unless the 5 s cap released `close()` first. A raw `gateway.yoga` mount bypasses the drain: it still answers after `close()`, with no 503, and `close()` cannot wait for it, so mount `gateway.nodeListener` instead. `nodeListener` writes Yoga's response straight to the socket, and `npm run bench:listener` checks that it keeps at least 0.80× the req/s of a raw `gateway.yoga` mount.
 
+#### Embed in an existing server
+
+`gateway.nodeListener` also mounts inside a host framework that already owns the HTTP server, and keeps the drain (503 after `close()`), `@defer` streaming and client-disconnect cancellation there. Fastify 4, for example:
+
+```ts
+app.route({
+  method: ['GET', 'POST'],
+  url: '/graphql',
+  handler: (req, reply) => {
+    reply.hijack(); // the gateway writes the response itself
+    // Fastify has already read the body stream; hand its parsed body to the listener.
+    gateway.nodeListener(Object.assign(req.raw, { body: req.body }), reply.raw);
+  },
+});
+```
+
+The listener streams the request itself whenever the stream is still unread, even if `req.body` is set. Only when a host has already read the whole stream (as Fastify and Express's `express.json()` do) does it rebuild the POST body from `req.body`: a string or `Buffer` is used as-is, and a parsed JSON object (or batch array) is re-serialised when `content-type` is `application/json` or `application/*+json`. The original `content-length` header is not forwarded, because the rebuilt bytes may differ in length from the wire bytes. With Express, call `gateway.nodeListener(req, res)` from a route after `express.json()`, `express.text()` or `express.raw()`. A consumed body that cannot be rebuilt (no `req.body`, a non-string scalar, or a parsed urlencoded or multipart object) gets HTTP 500 with `connection: close`, `{"errors":[{"message":"request body already consumed by the host server: ...","extensions":{"code":"REQUEST_BODY_CONSUMED"}}]}` and no downstream call; after `close()` it gets the drain's 503 instead.
+
 #### Options reference
 
 **`GatewayOptions`** — passed to `createGateway(opts)`:
@@ -372,7 +390,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1618 tests across 65 files (Vitest), all green:
+`npm test` — 1647 tests across 66 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -406,6 +424,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Fast drain-aware listener** (`test_iter94_behavior.test.ts`): `createServer(gateway.nodeListener)` answers byte-identically to `gateway.fetch` (status, `content-type`, `content-length`, body) for queries, GETs, `/healthz`, `/readyz`, a 400 and a `NOT_FOUND`, keeps 3 downstream calls, delivers a paused client's large batch whole, leaks no listeners or warnings over 200 keep-alive requests, contains a client abort mid-response and keeps the drain contract. Its 0.80× throughput floor against a raw `createServer(gateway.yoga)` mount is enforced by `npm run bench:listener`, not by `npm test`; the suite only checks that the script passes at `--threshold 0` and fails with exit code 1 at `--threshold 99`.
 - **Incremental delivery** (`test_iter95_behavior.test.ts`): `@defer` streams over `multipart/mixed` and `text/event-stream` with the names first and each author's `books` as `incremental` parts that merge back to the plain reply, at 3 batched calls and the NAIVE total of the inline query; `queryComplexity` rides on the first payload and `downstreamCalls` on the last; an inactive defer is byte-identical to the plain reply; a JSON-only `accept` gets a 406 `DEFER_NOT_ACCEPTED` at 0 downstream calls; `@stream` fails validation; `maxComplexity`/`maxDepth` refuse a deferred query like the inline one; and `createServer(gateway.nodeListener)` delivers the first part at least 60 ms before the last against a 50 ms backend.
 - **Client disconnect** (`test_iter96_behavior.test.ts`): against the bundled backend at 300 ms latency, an edge abort from the `onDownstreamCall` hook after `/authors` answers costs 1 downstream call and 1 event (batched and NAIVE), an in-flight call is cancelled as `CLIENT_CLOSED_REQUEST` with `outcome: 'aborted'` and `status: null`, and the same holds over a real `nodeListener` socket, a cancelled `@defer` stream (no `/reviews/by-book`), a batched POST and a direct `createContext({ signal })`; with `AbortSignal.any` removed the same counts hold, a never-aborting signal leaves data, 3/21 calls and `DOWNSTREAM_TIMEOUT` unchanged, a leaving `/readyz` prober does not cancel the shared check, and 12 concurrent calls share one edge-signal listener with no `MaxListenersExceededWarning`.
+- **Embedded in a host server** (`test_iter97_behavior.test.ts`): `gateway.nodeListener` mounted in Fastify 4 (`reply.hijack()` plus `Object.assign(req.raw, { body: req.body })`) and in a server that reads the stream itself and sets `req.body` as a parsed JSON object, string or `Buffer` answers like `gateway.fetch` with the same data at 2/3 downstream calls (3 under NAIVE), batches included; a rebuilt body keeps a non-ASCII variable exact whatever the original `content-length`; a consumed body that cannot be rebuilt gets a JSON 500 `REQUEST_BODY_CONSUMED` with `connection: close` at 0 calls; an unread stream still wins over a preset `req.body`; and GET, the 503 drain after `close()`, `@defer` streaming and client-disconnect cancellation all hold through the Fastify mount.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
