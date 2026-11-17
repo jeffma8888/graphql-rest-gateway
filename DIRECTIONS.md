@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-99
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- One positive-integer rule: `maxBatchSize` goes through options.ts `assertPositiveInt`, server.ts's private `validateMaxBatchSize` is deleted, and so is the uncalled `RestClient.resetStats()` (row 60, batch half)
+    - Candidate A2 -- One README options-table drift guard: replace the 4 copies of "the table has exactly N rows" with 1 check derived from the `GatewayOptions` known-keys map
+    - Candidate A3 -- One content guard for the N+1 oracle replaces the `git show HEAD:` / `git status` byte-copies scattered across old tests (row 77)
+    - Candidate B1 -- The quality gate's test half drops from about 21.8 s to about 15.1 s wall (-31 %) with a config-only change: prebundle the inlined GraphQL dependency chain once, and start the slowest files first
+    - Candidate B2 -- Compress GraphQL responses the client accepts: SAMPLE 2082 → 488 B (-77 %), a 60-root dashboard 15 994 → 1 040 B (-93 %), for about 0.25-0.35 ms CPU per request (row 66)
+    - Candidate B3 -- Opt-in in-flight coalescing of identical downstream GETs across concurrent edge requests: a burst of 50 SAMPLE queries costs 3 downstream calls instead of 151 (row 65)
+    winner: B2
+    ship: pending (not yet decided)
   iter-98
     lenses: integration-and-adoption
     - Candidate A1 -- A host-prefixed mount works for every method: a `graphqlEndpoint` option (`GRAPHQL_PATH` for `npm start`) makes GET queries, EventSource SSE and GraphiQL answer at, for example, `/api/graphql`, not POST alone
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One content guard for the N+1 oracle replaces about 20 `git show HEAD:` / `git status` byte-copies, which catch a committed weakening only 2 times out of 25 and turn the suite red outside a git checkout (row 77)
     - Candidate B3 -- One positive-integer rule: `maxBatchSize` goes through options.ts `assertPositiveInt`, server.ts's private `validateMaxBatchSize` is deleted, and so is `RestClient.resetStats()`, which has no callers (row 60, batch half, plus an iter-92 B3 rider)
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 3457e47
   iter-97
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- `close()` cancels what drain cannot finish: an in-flight `/readyz` aborts at once, and leftover downstream fetches abort at the 5 s cap, so the process exits in about 5 s instead of 30.5 s (row 30, abort half)
@@ -651,4 +661,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-65 scouted iterations
+66 scouted iterations

@@ -29,6 +29,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   maxBatchSize: true,
   onDownstreamCall: true,
   graphqlEndpoint: true,
+  compressMinBytes: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -176,6 +177,19 @@ export function assertGraphqlEndpoint(value: unknown, name: string = 'graphqlEnd
   }
 }
 
+/**
+ * A non-negative integer (`0` compresses every GraphQL JSON reply) or `false`
+ * (off). WHY `TypeError` for `null`/`true`/`'1024'` alike: each looks like a
+ * plausible "on/off" or env-string value that would otherwise silently pick
+ * a threshold the caller never meant.
+ */
+function assertCompressMinBytes(value: unknown): void {
+  if (value === undefined || value === false) return;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`compressMinBytes must be a non-negative integer or false, got ${describe(value)}`);
+  }
+}
+
 /** Throws `TypeError`/`RangeError` naming the offending key; called first thing in `createGateway`. */
 export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOptions {
   assertObject(opts);
@@ -187,4 +201,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertLoaderOptions(opts.loaderOptions);
   assertFunction('onDownstreamCall', opts.onDownstreamCall);
   assertGraphqlEndpoint(opts.graphqlEndpoint);
+  assertCompressMinBytes(opts.compressMinBytes);
 }

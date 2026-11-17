@@ -23,6 +23,7 @@ import { getValidationResult, buildFragmentMap } from './security/validation-cac
 import { parseWithTokenLimit } from './security/token-limit.js';
 import { validateGatewayOptions } from './options.js';
 import { deferAcceptPlugin } from './defer.js';
+import { compressionPlugin } from './compression.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -71,6 +72,14 @@ export interface GatewayOptions {
    * stay at the root. An absolute path, no trailing slash, else `TypeError`.
    */
   graphqlEndpoint?: string;
+  /**
+   * Smallest identity body, in bytes, of a non-streaming GraphQL JSON response
+   * that is gzip/deflate-compressed when the client's `accept-encoding` allows
+   * it (default 1024; `0` = always; `false` = off). WHY a threshold: below
+   * about 1 KB the coding overhead outweighs the saving. `@defer` multipart
+   * and SSE are never compressed: a compressor would buffer every part.
+   */
+  compressMinBytes?: number | false;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -369,6 +378,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   validateMaxBatchSize(opts.maxBatchSize);
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
+  const compressMinBytes = opts.compressMinBytes ?? 1024;
 
   let shuttingDown = false;
   let inFlight = 0;
@@ -423,6 +433,8 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
       queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),
       badUserInputPlugin(),
+      // `false` adds no plugin at all, so an opted-out gateway is HEAD byte for byte.
+      ...(compressMinBytes === false ? [] : [compressionPlugin(compressMinBytes)]),
     ],
     graphiql: {
       title: 'graphql-rest-gateway',

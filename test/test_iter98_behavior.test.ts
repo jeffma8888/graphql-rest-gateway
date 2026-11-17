@@ -470,22 +470,22 @@ function section(heading: string): string {
 }
 
 describe('EB10: the README documents it', () => {
-  it('the GatewayOptions table has a graphqlEndpoint row (string, default /graphql) and exactly 10 keys', () => {
+  it('the GatewayOptions table has a graphqlEndpoint row (string, default /graphql) and exactly 11 keys', () => {
     const opts = section('**`GatewayOptions`**').split('**`BackendOptions`**')[0] ?? '';
     const rows = opts.split('\n').filter((l) => /^\| `[A-Za-z]+` \|/.test(l));
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(11);
     const row = rows.find((l) => l.startsWith('| `graphqlEndpoint` |')) ?? '';
     const cells = row.split('|').map((c) => c.trim());
     expect(cells[2]).toBe('`string`');
     expect(cells[3]).toBe('`/graphql`');
   });
 
-  it('test_iter72 KNOWN lists graphqlEndpoint and its title says "ten"', () => {
+  it('test_iter72 KNOWN lists graphqlEndpoint and its title says "eleven" (compressMinBytes, iter-99)', () => {
     const t72 = readFileSync(resolve(root, 'test/test_iter72_behavior.test.ts'), 'utf8');
     const known = /const KNOWN = \[([\s\S]*?)\]/.exec(t72)?.[1] ?? '';
     expect(known).toContain("'graphqlEndpoint'");
-    expect(t72).toMatch(/\bten\b/);
-    expect(t72).not.toMatch(/\bnine\b/);
+    expect(t72).toMatch(/\beleven\b/);
+    expect(t72).not.toMatch(/\b(nine|ten)\b/);
   });
 
   it('the npm start env table has a GRAPHQL_PATH row defaulting to /graphql', () => {

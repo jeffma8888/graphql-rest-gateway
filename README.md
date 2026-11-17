@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1695%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1745%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -227,8 +227,11 @@ A host prefix reaches the gateway unstripped: under Fastify's `app.register(plug
 | `maxBatchSize` | `number` | unset → batching off | Opt-in request batching: a POST whose JSON body is an array of up to this many operations is served as one batch sharing one loader set and one `maxDownstreamCalls` budget; a larger batch gets HTTP 413 (positive integer, else `RangeError`) |
 | `onDownstreamCall` | `(event: DownstreamCallEvent) => void` | unset → no hook | Operator hook called once per downstream REST call sent, after it settles, with `{ route, status, durationMs, outcome, errorCode }`; never awaited, throws and rejections are swallowed (a function, else `TypeError`) |
 | `graphqlEndpoint` | `string` | `/graphql` | Path at which GraphQL GET, POST, SSE and GraphiQL are served, e.g. `/api/graphql` under a host prefix; the old `/graphql` then 404s, and `/healthz` and `/readyz` stay at the root (absolute path, no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`, not `/healthz` or `/readyz`, else `TypeError`) |
+| `compressMinBytes` | `number \| false` | `1024` | Smallest identity body (bytes) of a non-streaming GraphQL JSON response that is gzip- or deflate-compressed when the client's `accept-encoding` allows it (q-values honoured, `br` is not offered); `@defer` multipart and SSE streams are never compressed; `0` compresses every GraphQL JSON reply, `false` = off (non-negative integer or `false`, else `TypeError`) |
 
 `createGateway` validates the whole object synchronously, before anything is built: an unknown key throws `TypeError` with a did-you-mean hint (`maxComplexty` → `maxComplexity`), even when its value is `undefined`, and an explicit `undefined` value means omitted. Limits are unlimited only by omission (`maxDownstreamCalls`) or default (`maxDepth` 10, `maxComplexity` 1000); `NaN`/`Infinity` are rejected.
+
+Response compression: a GraphQL JSON reply of at least `compressMinBytes` bytes goes out gzip- or deflate-encoded, with `vary: accept-encoding`, when the request's `accept-encoding` allows it; the nested sample page shrinks from 2082 to 488 bytes (about 77 %) at the same 3 downstream calls. Without the header, or below the threshold, the reply is unchanged. `@defer` multipart and SSE are never compressed, because a compressor would hold back the cheap first part until the last one. The gateway reflects no secrets into response bodies by default; if your resolvers echo a caller secret next to attacker-controlled input, set `compressMinBytes: false` (BREACH).
 
 **`BackendOptions`** — passed to `buildBackend(opts)`:
 
@@ -394,7 +397,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1695 tests across 67 files (Vitest), all green:
+`npm test` — 1745 tests across 68 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
