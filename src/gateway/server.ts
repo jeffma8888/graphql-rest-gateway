@@ -5,6 +5,7 @@ import { schema } from './schema.js';
 import { createContext, type GatewayContext } from './context.js';
 import {
   RestClient,
+  InFlightCalls,
   validateForwardHeaders,
   validateMaxDownstreamCalls,
   type DownstreamCallHook,
@@ -80,6 +81,17 @@ export interface GatewayOptions {
    * and SSE are never compressed: a compressor would buffer every part.
    */
   compressMinBytes?: number | false;
+  /**
+   * Opt-in (default `false`): while a downstream GET is in flight, an
+   * identical one (same URL and query string, same forwarded header values)
+   * from any concurrent request on this gateway waits for it instead of
+   * sending its own. WHY: DataLoader dedupes only within one request, so a
+   * burst of identical dashboard queries otherwise pays the backend once per
+   * request. Nothing is cached: the entry goes when the call settles. The
+   * sender counts, budgets and reports the call; a joined call counts 0 in
+   * `downstreamCalls`. No effect under NAIVE loaders (`cache: false`).
+   */
+  coalesceInFlight?: boolean;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -379,6 +391,8 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
   const compressMinBytes = opts.compressMinBytes ?? 1024;
+  // One registry per gateway, never module-global: two gateways never share a call.
+  const inFlightCalls = opts.coalesceInFlight === true ? new InFlightCalls() : undefined;
 
   let shuttingDown = false;
   let inFlight = 0;
@@ -406,6 +420,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         // `/readyz` builds its own client without one: a prober leaving must
         // not cancel the check other probers share.
         signal: request.signal,
+        inFlightCalls,
       });
       contexts.set(request, context);
     }

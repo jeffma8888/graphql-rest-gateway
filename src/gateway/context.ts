@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { RestClient, type DownstreamCallHook } from './datasources/rest-client.js';
+import { RestClient, type DownstreamCallHook, type InFlightCalls } from './datasources/rest-client.js';
 import { buildDataSources, type DataSources } from './datasources/index.js';
 import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders.js';
 import { buildServices, type Services } from './services.js';
@@ -48,6 +48,12 @@ export interface CreateContextOptions {
    * `CLIENT_CLOSED_REQUEST`. Unset = calls run to completion as before.
    */
   signal?: AbortSignal;
+  /**
+   * The gateway's in-flight registry (`coalesceInFlight`); forwarded to
+   * RestClient. Ignored under `loaderOptions.cache === false`, so NAIVE always
+   * shows every call it makes. Unset = every call is sent by its own request.
+   */
+  inFlightCalls?: InFlightCalls;
 }
 
 /**
@@ -68,6 +74,7 @@ export function parseAuth(authorization?: string | null): AuthContext {
 }
 
 export function createContext(opts: CreateContextOptions): GatewayContext {
+  const loaderOptions = opts.loaderOptions ?? BATCHED;
   const restClient =
     opts.restClient ??
     new RestClient(
@@ -77,9 +84,9 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
       opts.downstreamHeaders,
       opts.onDownstreamCall,
       opts.signal,
+      loaderOptions.cache ? opts.inFlightCalls : undefined,
     );
   const datasources = buildDataSources(restClient);
-  const loaderOptions = opts.loaderOptions ?? BATCHED;
   const loaders = buildLoaders(datasources, loaderOptions);
   const services = buildServices(datasources, loaders, loaderOptions.cache);
   const auth = parseAuth(opts.authorization);

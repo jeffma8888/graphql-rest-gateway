@@ -312,14 +312,96 @@ function emit(hook: DownstreamCallHook, event: DownstreamCallEvent): void {
   }
 }
 
+/** A 2xx downstream reply as text: what concurrent identical GETs share. */
+interface SharedBody {
+  status: number;
+  text: string;
+}
+
+/**
+ * One downstream GET that several requests are waiting on. WHY reference
+ * counted: a waiter whose edge client leaves must not cancel a fetch another
+ * waiter still needs, yet once every waiter has left the call is pure waste
+ * on the legacy backend, so it is cancelled exactly as an unshared call is.
+ */
+export class SharedCall {
+  /** The HTTP status once headers arrive, for the sender's hook event. */
+  status: number | null = null;
+  readonly result: Promise<SharedBody>;
+  private waiters = 1;
+  /** Aborted only when the last waiter leaves; typed as `CLIENT_CLOSED_REQUEST`. */
+  private readonly abandoned = new AbortController();
+  private readonly deadline: CallSignal;
+
+  constructor(
+    timeoutMs: number,
+    run: (signal: AbortSignal, abandoned: AbortSignal, onStatus: (status: number) => void) => Promise<SharedBody>,
+    private readonly onDone: () => void,
+  ) {
+    this.deadline = deadlineSignal(timeoutMs);
+    this.result = run(this.deadline.signal, this.abandoned.signal, (status) => (this.status = status)).finally(() => {
+      this.deadline.release();
+      this.onDone();
+    });
+    // Every waiter may have left before it settles; the rejection is still handled.
+    this.result.catch(() => undefined);
+  }
+
+  join(): void {
+    this.waiters += 1;
+  }
+
+  /** One waiter's edge client left; the last one out cancels the fetch. */
+  leave(): void {
+    this.waiters -= 1;
+    if (this.waiters > 0) return;
+    // Dropped from the registry first, so no new request joins a doomed call.
+    this.onDone();
+    this.abandoned.abort();
+    this.deadline.abort(this.abandoned.signal.reason);
+  }
+}
+
+/**
+ * Per-gateway registry of in-flight downstream GETs (`coalesceInFlight`).
+ * WHY per gateway and keyed by URL plus forwarded header values: two
+ * concurrent requests may only share a call that would have been byte-for-byte
+ * the same request, so one caller's credential never answers another's. WHY
+ * an entry lives only while its fetch is in flight: this is coalescing, not a
+ * cache, so a request that starts after a call settled always sends its own.
+ */
+export class InFlightCalls {
+  private readonly calls = new Map<string, SharedCall>();
+
+  /** The in-flight call for `key`, now counting one more waiter, if any. */
+  join(key: string): SharedCall | undefined {
+    const call = this.calls.get(key);
+    call?.join();
+    return call;
+  }
+
+  /** Starts the shared call for `key`; the caller is its first waiter. */
+  start(
+    key: string,
+    timeoutMs: number,
+    run: (signal: AbortSignal, abandoned: AbortSignal, onStatus: (status: number) => void) => Promise<SharedBody>,
+  ): SharedCall {
+    const call: SharedCall = new SharedCall(timeoutMs, run, () => {
+      if (this.calls.get(key) === call) this.calls.delete(key);
+    });
+    this.calls.set(key, call);
+    return call;
+  }
+}
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
   /** Per-request deadline in milliseconds for every downstream call. */
   readonly timeoutMs: number;
-  /** Calls currently in flight under the edge signal; see `callSignal`. */
-  private readonly inFlight = new Set<CallSignal>();
+  /** Abort callbacks of calls (and shared-call waits) in flight under the edge signal; see `watchEdge`. */
+  private readonly inFlight = new Set<(reason: unknown) => void>();
   private readonly onEdgeAbort = (): void => {
-    for (const call of this.inFlight) call.abort(this.signal?.reason);
+    for (const abort of this.inFlight) abort(this.signal?.reason);
   };
 
   /**
@@ -340,6 +422,9 @@ export class RestClient {
    *   caller has hung up, every later `get` is refused unsent (like a budget
    *   refusal) and an in-flight fetch is cancelled, so a client that left stops
    *   costing the legacy backend calls -- whatever hop, loader or batch is next.
+   * @param coalesce The gateway's in-flight registry (`coalesceInFlight`), or
+   *   undefined. WHY optional here: the caller leaves it unset under NAIVE
+   *   loaders, so the N+1 demonstration can never be hidden by sharing.
    */
   constructor(
     private readonly baseUrl: string,
@@ -348,6 +433,7 @@ export class RestClient {
     private readonly headers: Readonly<Record<string, string>> = {},
     private readonly onCall?: DownstreamCallHook,
     private readonly signal?: AbortSignal,
+    private readonly coalesce?: InFlightCalls,
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -374,28 +460,38 @@ export class RestClient {
   }
 
   /**
-   * The signal for one call under this client. WHY one edge listener per
-   * client, fanned out, and not one per call: Node's EventTarget prints a
-   * `MaxListenersExceededWarning` ("possible memory leak") at 11 listeners on
-   * one signal, and a single request easily has more calls in flight (12
-   * aliased roots batched, ~15 concurrent `/reviews/by-book` under NAIVE). The
-   * listener is attached while any call is in flight and detached when the
-   * last settles, so the caller's signal is left as it was found -- we never
-   * `setMaxListeners` on an object the embedder owns.
+   * Registers `onAbort` to run if the edge client leaves; returns its release.
+   * WHY one edge listener per client, fanned out, and not one per call: Node's
+   * EventTarget prints a `MaxListenersExceededWarning` ("possible memory
+   * leak") at 11 listeners on one signal, and a single request easily has more
+   * calls in flight (12 aliased roots batched, ~15 concurrent
+   * `/reviews/by-book` under NAIVE). The listener is attached while any call
+   * is in flight and detached when the last settles, so the caller's signal is
+   * left as it was found -- we never `setMaxListeners` on an object the
+   * embedder owns.
    */
+  private watchEdge(edge: AbortSignal, onAbort: (reason: unknown) => void): () => void {
+    if (this.inFlight.size === 0) edge.addEventListener('abort', this.onEdgeAbort, { once: true });
+    this.inFlight.add(onAbort);
+    return () => {
+      if (this.inFlight.delete(onAbort) && this.inFlight.size === 0) {
+        edge.removeEventListener('abort', this.onEdgeAbort);
+      }
+    };
+  }
+
+  /** The signal for one unshared call under this client: its deadline plus the edge abort. */
   private callSignal(): CallSignal {
     const edge = this.signal;
     if (!edge) return { signal: AbortSignal.timeout(this.timeoutMs), abort: () => undefined, release: () => undefined };
     const call = deadlineSignal(this.timeoutMs);
     if (edge.aborted) call.abort(edge.reason);
-    if (this.inFlight.size === 0) edge.addEventListener('abort', this.onEdgeAbort, { once: true });
-    this.inFlight.add(call);
+    const unwatch = this.watchEdge(edge, call.abort);
     return {
       ...call,
       release: () => {
         call.release();
-        this.inFlight.delete(call);
-        if (this.inFlight.size === 0) edge.removeEventListener('abort', this.onEdgeAbort);
+        unwatch();
       },
     };
   }
@@ -415,15 +511,26 @@ export class RestClient {
   get<T>(path: string, params: QueryParams | undefined, read: (body: unknown) => T): Promise<T>;
   async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
     this.checkClientPresent(path);
+    const reader = read ?? parsedJson;
+    if (this.coalesce) {
+      const url = this.buildUrl(path, params);
+      const key = this.coalesceKey(url);
+      // A join sends nothing, so it is neither budget-checked, counted nor reported.
+      const joined = this.coalesce.join(key);
+      if (joined) return this.wait(joined, path, joined.result.then((body) => readBody(path, body.status, body.text, reader)));
+      this.checkBudget();
+      this.track(path);
+      return this.sendShared(this.coalesce, key, url, path, reader);
+    }
     this.checkBudget();
     this.track(path);
-    if (!this.onCall) return this.send(path, params, read);
+    if (!this.onCall) return this.send(path, params, reader);
 
     const started = performance.now();
     let status: number | null = null;
     let verdict = OK;
     try {
-      return await this.send(path, params, read, (arrived) => (status = arrived));
+      return await this.send(path, params, reader, (arrived) => (status = arrived));
     } catch (err: unknown) {
       verdict = classify(err);
       throw err;
@@ -432,17 +539,8 @@ export class RestClient {
     }
   }
 
-  /**
-   * The uncounted transport for one call: build the URL, fetch, check status,
-   * read and contract-check the body. `onStatus` reports the HTTP status as
-   * soon as headers arrive, so a failure while reading the body still knows it.
-   */
-  private async send<T>(
-    path: string,
-    params: QueryParams | undefined,
-    read: ((body: unknown) => T) | undefined,
-    onStatus?: (status: number) => void,
-  ): Promise<T | unknown> {
+  /** The full downstream URL: base path prefix, route, then the defined params. */
+  private buildUrl(path: string, params: QueryParams | undefined): URL {
     const url = joinBaseUrl(this.baseUrl, path);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -450,27 +548,113 @@ export class RestClient {
         url.searchParams.set(key, Array.isArray(value) ? value.join(',') : String(value));
       }
     }
+    return url;
+  }
 
+  /**
+   * Method, full URL and the forwarded header values, sorted by name. WHY
+   * JSON: header values may contain any separator, so plain joining could
+   * make two different requests collide on one key.
+   */
+  private coalesceKey(url: URL): string {
+    const headers = Object.entries(this.headers).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return JSON.stringify(['GET', url.href, headers]);
+  }
+
+  /**
+   * Sends one counted GET that concurrent identical GETs may join. The hook
+   * fires when the shared fetch settles, not when this request stops waiting:
+   * the call was sent either way, and if another waiter is still served, the
+   * event reports that outcome (an `ok` stays `ok` after this caller left).
+   */
+  private sendShared<T>(
+    registry: InFlightCalls,
+    key: string,
+    url: URL,
+    path: string,
+    read: (body: unknown) => T,
+  ): Promise<T> {
+    const started = performance.now();
+    const call = registry.start(key, this.timeoutMs, (signal, abandoned, onStatus) =>
+      this.fetchText(url, path, signal, abandoned, onStatus),
+    );
+    const parsed = call.result.then((body) => readBody(path, body.status, body.text, read));
+    if (this.onCall) {
+      const hook = this.onCall;
+      const report = (verdict: Verdict): void =>
+        emit(hook, { route: path, status: call.status, durationMs: performance.now() - started, ...verdict });
+      parsed.then(() => report(OK), (err: unknown) => report(classify(err)));
+    }
+    return this.wait(call, path, parsed);
+  }
+
+  /**
+   * Waits for a shared call's `outcome` unless this request's edge client
+   * leaves first: then only this waiter rejects, as `CLIENT_CLOSED_REQUEST`,
+   * and the shared fetch is cancelled only if it was the last one waiting.
+   */
+  private wait<T>(call: SharedCall, path: string, outcome: Promise<T>): Promise<T> {
+    const edge = this.signal;
+    if (!edge) return outcome;
+    return new Promise<T>((resolve, reject) => {
+      const unwatch = this.watchEdge(edge, () => {
+        unwatch();
+        call.leave();
+        reject(clientClosed(path));
+      });
+      outcome.then(resolve, reject).finally(unwatch);
+    });
+  }
+
+  /**
+   * The uncounted transport for one unshared call: build the URL, fetch the
+   * text, then contract-check it. WHY the URL is built here, after `track`:
+   * an invalid base must keep failing as a counted, reported call.
+   */
+  private async send<T>(
+    path: string,
+    params: QueryParams | undefined,
+    read: (body: unknown) => T,
+    onStatus?: (status: number) => void,
+  ): Promise<T> {
+    const url = this.buildUrl(path, params);
     const { signal, release } = this.callSignal();
     try {
-      let res: Response;
-      try {
-        res = await fetch(url, { headers: this.headers, signal });
-      } catch (err: unknown) {
-        throw fetchFailure(path, this.timeoutMs, err, this.signal);
-      }
-      onStatus?.(res.status);
-
-      if (!res.ok) {
-        throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {
-          extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
-        });
-      }
-      const text = await bodyText(path, this.timeoutMs, res, this.signal);
-      return readBody(path, res.status, text, read ?? parsedJson);
+      const { status, text } = await this.fetchText(url, path, signal, this.signal, onStatus);
+      return readBody(path, status, text, read);
     } finally {
       release();
     }
+  }
+
+  /**
+   * Fetch, check status, read the body as text. `cancelled` is the signal
+   * whose abort means "the client left" (the edge, or a shared call's last
+   * waiter leaving), so that rejection is typed `CLIENT_CLOSED_REQUEST`.
+   * `onStatus` reports the HTTP status as soon as headers arrive, so a
+   * failure while reading the body still knows it.
+   */
+  private async fetchText(
+    url: URL,
+    path: string,
+    signal: AbortSignal,
+    cancelled: AbortSignal | undefined,
+    onStatus?: (status: number) => void,
+  ): Promise<SharedBody> {
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: this.headers, signal });
+    } catch (err: unknown) {
+      throw fetchFailure(path, this.timeoutMs, err, cancelled);
+    }
+    onStatus?.(res.status);
+
+    if (!res.ok) {
+      throw new GraphQLError(`Downstream REST error ${res.status} ${res.statusText} for ${path}`, {
+        extensions: { code: 'DOWNSTREAM_ERROR', status: res.status },
+      });
+    }
+    return { status: res.status, text: await bodyText(path, this.timeoutMs, res, cancelled) };
   }
 
   resetStats(): void {

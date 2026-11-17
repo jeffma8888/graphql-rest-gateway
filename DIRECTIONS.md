@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-100
+    lenses: performance-and-throughput
+    - Candidate A1 -- Brotli at a pinned quality: `accept-encoding: br` makes SAMPLE 599 → 478 B (-20 %) and a 60-root reply 706 → 504 B (-29 %) at about the same CPU as gzip
+    - Candidate A2 -- Opt-in in-flight coalescing across concurrent edge requests (row 65): a burst of 50 SAMPLE queries costs about 3 downstream calls instead of 150
+    - Candidate A3 -- Quality-gate collect cut (row 99), re-specified with DETERMINISTIC acceptance: prebundle the inlined graphql/Yoga chain so collect drops from 37.2 s of worker time and gate wall from 18.7 s
+    - Candidate B1: The README's word "sample" refers to three different queries, so its byte, cost and call figures cannot be checked. Name the one query behind each figure (`BENCHMARK_QUERY`) and check all three against a live run
+    - Candidate B2: README §6 Architecture covers only the resolve half. Nine modules every request passes through are named nowhere in the README. Add the edge pipeline and guard that every gateway module is named
+    - Candidate B3: The compression decisions are recorded only in the foundry log. README §9 should say why `br` is not offered and why SSE goes out with `content-encoding: none`, with a doc-test that keeps the second claim true
+    winner: A2
+    ship: pending (not yet decided)
   iter-99
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One positive-integer rule: `maxBatchSize` goes through options.ts `assertPositiveInt`, server.ts's private `validateMaxBatchSize` is deleted, and so is the uncalled `RestClient.resetStats()` (row 60, batch half)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Compress GraphQL responses the client accepts: SAMPLE 2082 → 488 B (-77 %), a 60-root dashboard 15 994 → 1 040 B (-93 %), for about 0.25-0.35 ms CPU per request (row 66)
     - Candidate B3 -- Opt-in in-flight coalescing of identical downstream GETs across concurrent edge requests: a burst of 50 SAMPLE queries costs 3 downstream calls instead of 151 (row 65)
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED 31b3099
   iter-98
     lenses: integration-and-adoption
     - Candidate A1 -- A host-prefixed mount works for every method: a `graphqlEndpoint` option (`GRAPHQL_PATH` for `npm start`) makes GET queries, EventSource SSE and GraphiQL answer at, for example, `/api/graphql`, not POST alone
@@ -661,4 +671,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-66 scouted iterations
+67 scouted iterations

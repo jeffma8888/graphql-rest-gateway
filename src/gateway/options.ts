@@ -30,6 +30,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   onDownstreamCall: true,
   graphqlEndpoint: true,
   compressMinBytes: true,
+  coalesceInFlight: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -190,6 +191,12 @@ function assertCompressMinBytes(value: unknown): void {
   }
 }
 
+/** WHY strictly boolean: `'false'` or `1` from a JSON or env-derived config would silently opt in. */
+function assertBoolean(key: string, value: unknown): void {
+  if (value === undefined || typeof value === 'boolean') return;
+  throw new TypeError(`${key} must be a boolean, got ${describe(value)}`);
+}
+
 /** Throws `TypeError`/`RangeError` naming the offending key; called first thing in `createGateway`. */
 export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOptions {
   assertObject(opts);
@@ -202,4 +209,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertFunction('onDownstreamCall', opts.onDownstreamCall);
   assertGraphqlEndpoint(opts.graphqlEndpoint);
   assertCompressMinBytes(opts.compressMinBytes);
+  assertBoolean('coalesceInFlight', opts.coalesceInFlight);
 }
