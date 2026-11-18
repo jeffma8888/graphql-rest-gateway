@@ -112,13 +112,58 @@ function readGraphqlPath(raw: string | undefined): string | undefined {
   return raw;
 }
 
+/**
+ * `1`/`true` → on, `0`/`false` → off, case-sensitive. WHY so narrow: `yes`,
+ * `TRUE` or ` 1` are each a plausible guess at "on", and silently reading one
+ * as off (or on) is the misconfiguration a fail-fast CLI exists to prevent.
+ */
+function readFlag(name: string, raw: string | undefined): boolean | undefined {
+  if (isUnset(raw)) return undefined;
+  if (raw === '1' || raw === 'true') return true;
+  if (raw === '0' || raw === 'false') return false;
+  throw new Error(`${name} must be 1, true, 0 or false, got ${JSON.stringify(raw)}`);
+}
+
+/**
+ * `off` → `false` (compression disabled), otherwise the library's
+ * non-negative integer threshold. Only lowercase `off`: `false`/`OFF` are
+ * rejected so the variable has one spelling for "off", not a guessable set.
+ */
+function readCompressMinBytes(raw: string | undefined): number | false | undefined {
+  if (raw === 'off') return false;
+  if (isUnset(raw) || /^\d+$/.test(raw)) return readInt('COMPRESS_MIN_BYTES', raw, 0);
+  throw new Error(`COMPRESS_MIN_BYTES must be a non-negative decimal integer or off, got ${JSON.stringify(raw)}`);
+}
+
+/**
+ * Which environment variable sets each `GatewayOptions` key, or `null` for a
+ * library-only option (a function or an object an env string cannot express).
+ * WHY a `Record` over `keyof GatewayOptions`: a new option fails tsc until it
+ * is either wired into {@link parseEnv} or deliberately declared library-only,
+ * so the CLI can no longer silently lag the library.
+ */
+export const OPTION_ENV: Record<keyof GatewayOptions, string | null> = {
+  restBaseUrl: 'REST_BASE_URL',
+  maxDepth: 'MAX_DEPTH',
+  maxComplexity: 'MAX_COMPLEXITY',
+  loaderOptions: null,
+  downstreamTimeoutMs: 'DOWNSTREAM_TIMEOUT_MS',
+  maxDownstreamCalls: 'MAX_DOWNSTREAM_CALLS',
+  forwardHeaders: 'FORWARD_HEADERS',
+  maxBatchSize: 'MAX_BATCH_SIZE',
+  onDownstreamCall: null,
+  graphqlEndpoint: 'GRAPHQL_PATH',
+  compressMinBytes: 'COMPRESS_MIN_BYTES',
+  coalesceInFlight: 'COALESCE_IN_FLIGHT',
+};
+
 interface CliConfig {
   port: number;
   /** Undefined → boot the bundled backend. */
   externalBaseUrl: string | undefined;
   /** Only meaningful (and only validated) in bundled mode. */
   restLatencyMs: number;
-  limits: Omit<GatewayOptions, 'restBaseUrl' | 'loaderOptions'>;
+  limits: Omit<GatewayOptions, 'restBaseUrl' | 'loaderOptions' | 'onDownstreamCall'>;
 }
 
 /** Validates every variable up front so a bad value never leaves a half-started process. */
@@ -142,6 +187,8 @@ function parseEnv(env: Env): CliConfig {
       forwardHeaders: readForwardHeaders(env.FORWARD_HEADERS),
       maxBatchSize: readInt('MAX_BATCH_SIZE', env.MAX_BATCH_SIZE, 1),
       graphqlEndpoint: readGraphqlPath(env.GRAPHQL_PATH),
+      compressMinBytes: readCompressMinBytes(env.COMPRESS_MIN_BYTES),
+      coalesceInFlight: readFlag('COALESCE_IN_FLIGHT', env.COALESCE_IN_FLIGHT),
     },
   };
 }

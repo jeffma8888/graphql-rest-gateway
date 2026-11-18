@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1828%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1863%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -103,7 +103,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
 
 | Variable | Rule | Default |
 | --- | --- | --- |
-| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend; may include a path prefix, no query string or fragment | unset → bundled backend |
+| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend → `restBaseUrl`; may include a path prefix, no query string or fragment | unset → bundled backend |
 | `PORT` | non-negative integer (`0` = random port) | `4000` |
 | `REST_LATENCY_MS` | non-negative integer, bundled mode only (ignored with `REST_BASE_URL`) | `25` |
 | `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
@@ -113,6 +113,10 @@ REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
 | `FORWARD_HEADERS` | comma-separated header names → `forwardHeaders` (whitespace trimmed, empty entries ignored) | unset → forward nothing |
 | `MAX_BATCH_SIZE` | positive integer → `maxBatchSize` | unset → batching off |
 | `GRAPHQL_PATH` | absolute path → `graphqlEndpoint` (no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`; not `/healthz` or `/readyz`) | `/graphql` |
+| `COMPRESS_MIN_BYTES` | non-negative integer or `off` → `compressMinBytes` (`0` compresses every GraphQL JSON reply) | `1024` |
+| `COALESCE_IN_FLIGHT` | `1`/`true` or `0`/`false` (case-sensitive) → `coalesceInFlight` | `0` (off) |
+
+`loaderOptions` and `onDownstreamCall` are library-only: they cannot be set from the environment, so pass them to `createGateway` in your own bootstrap.
 
 Two-terminal example (the backend runs in its own process, and the gateway fronts it):
 
@@ -401,7 +405,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1828 tests across 71 files (Vitest), all green:
+`npm test` — 1863 tests across 72 files (Vitest), all green:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -438,6 +442,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Embedded in a host server** (`test_iter97_behavior.test.ts`): `gateway.nodeListener` mounted in Fastify 4 (`reply.hijack()` plus `Object.assign(req.raw, { body: req.body })`) and in a server that reads the stream itself and sets `req.body` as a parsed JSON object, string or `Buffer` answers like `gateway.fetch` with the same data at 2/3 downstream calls (3 under NAIVE), batches included; a rebuilt body keeps a non-ASCII variable exact whatever the original `content-length`; a consumed body that cannot be rebuilt gets a JSON 500 `REQUEST_BODY_CONSUMED` with `connection: close` at 0 calls; an unread stream still wins over a preset `req.body`; and GET, the 503 drain after `close()`, `@defer` streaming and client-disconnect cancellation all hold through the Fastify mount.
 - **Write path** (`test_iter101_behavior.test.ts`): `addReview` stores a review through `POST /reviews` at exactly 1 downstream call (per backend instance, shared seed data untouched) and keeps `pii` redaction; anonymous or unparseable callers get `UNAUTHENTICATED` and bad `rating`/`body` get `BAD_ARGUMENT`, both at 0 calls; an unknown book is `NOT_FOUND` after 1 call; `book { reviews }` in the same response reads the write (3 calls) and two aliased writes run serially (5 calls); the POST carries forwarded headers and a JSON body, fires one hook event with the GET key set, spends `maxDownstreamCalls`, and is never coalesced; a mutation over GET is a 405; `maxDepth`/`maxComplexity` price it like a query.
 - **@defer with @skip/@include** (`test_iter102_behavior.test.ts`): under a JSON-only `accept`, a defer excluded by `@skip(if: true)` or `@include(if: false)` (literal, variable, variable default, a skipped ancestor field or a skipped fragment spread) gets the plain 200 reply, body-identical to the query without that selection apart from `extensions`, at the same downstream call count; skip wins over include; an active defer beside an excluded one, or a second included spread of the same fragment, still gets 406 `DEFER_NOT_ACCEPTED` at 0 calls; streaming clients and GET behave as before.
+- **CLI opt-ins** (`test_iter103_behavior.test.ts`): `npm start` honours `COALESCE_IN_FLIGHT` (a 50-request burst sums ≤ 15 downstream calls with `1`/`true`, 150 when unset, `0`, `false` or empty) and `COMPRESS_MIN_BYTES` (`0` gzips a small reply, `off` and `5000` leave the nested sample uncompressed, unset keeps 1024), rejects bad values before listening with the variable and quoted value, and ties the exported `OPTION_ENV` map to both README tables and the CLI's `env.NAME` reads.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

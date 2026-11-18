@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-103
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- Admission control stops pricing selections `@skip`/`@include` excludes (row 69): `@include(if:$details)` with `$details:false` costs what the executor runs
+    - Candidate A2 -- `close()` aborts the downstream fetches its 5 s drain cap gives up on (row 30, abort half), so SIGTERM really ends work at 5 s
+    - Candidate A3 -- A downstream 2xx body over a byte cap fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (row 39)
+    - Candidate B1 -- `npm start` can turn on the shipped opt-ins: `COALESCE_IN_FLIGHT` (row 100) and `COMPRESS_MIN_BYTES`, fail-fast validated, plus a guard that every `GatewayOptions` key is either mapped to an env var or declared library-only
+    - Candidate B2 -- `check-backend` covers the write path: an opt-in `--writes` probe sends `POST /reviews` a deliberately invalid body and requires the contract's 400, so a read-only legacy backend fails pre-flight instead of making `addReview` claim real books do not exist
+    - Candidate B3 -- TypeScript consumers can import the codegen'd contract types: `import type { Book, Review, MutationAddReviewArgs, Resolvers } from 'graphql-rest-gateway/types'` (and the core shapes from the entry)
+    winner: B1
+    ship: pending (not yet decided)
   iter-102
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Second write verb: `Mutation.deleteReview(id: ID!): Review!` → bundled `DELETE /reviews/:id` at 1 call, auth-gated, read-your-write (row 107)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The `@defer` accept guard refuses only defers the executor will run: it honours `@skip`/`@include` (row 95)
     - Candidate B3 -- Options are fixed at boot: `createGateway` snapshots `opts`, so mutating the caller's object cannot 500 every request, bring back N+1, or re-point traffic (row 50, snapshot half)
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED e35167b
   iter-101
     lenses: unknown
     - Candidate A1 -- README §8 Testing stopped at iter-97: the last 3 shipped features have no test bullet, and 31 of 69 test files are named nowhere in §8. Backfill the bullets and add a guard that every test file is named
@@ -691,4 +701,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-69 scouted iterations
+70 scouted iterations
