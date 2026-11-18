@@ -47,6 +47,7 @@ const KNOWN = [
   'graphqlEndpoint',
   'compressMinBytes',
   'coalesceInFlight',
+  'downstreamCacheTtlMs',
 ] as const;
 
 const AUTHOR_Q = '{ author(id:"a1"){ id name } }';
@@ -499,7 +500,7 @@ describe('EB13 - README Options table', () => {
     expect(prose).toMatch(/maxComplexity`?\s*1000/);
   });
 
-  it('the README table lists exactly the twelve known keys', () => {
+  it('the README table lists exactly the thirteen known keys', () => {
     expect(optionsTableKeys(optionsBlock()).sort()).toEqual([...KNOWN].sort());
   });
 });
@@ -518,13 +519,14 @@ const VALID: Record<string, unknown> = {
   graphqlEndpoint: '/api/graphql',
   compressMinBytes: 1024,
   coalesceInFlight: true,
+  downstreamCacheTtlMs: 60000,
 };
 
 describe('Drift guard - README GatewayOptions table vs validator', () => {
   const keys = optionsTableKeys(README.slice(README.indexOf('**`GatewayOptions`**'), README.indexOf('**`BackendOptions`**')));
 
   it('the table is non-empty and every row has a known valid value', () => {
-    expect(keys.length).toBe(12);
+    expect(keys.length).toBe(13);
     for (const k of keys) expect(VALID).toHaveProperty(k);
   });
 

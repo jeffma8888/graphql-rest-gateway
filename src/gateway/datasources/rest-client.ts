@@ -394,6 +394,67 @@ export class InFlightCalls {
   }
 }
 
+/** Most entries a {@link DownstreamCache} holds; the oldest is evicted past it. */
+const MAX_CACHED_BODIES = 1000;
+
+interface CachedBody extends SharedBody {
+  /** `Date.now()` after which the entry is stale and never served. */
+  expires: number;
+}
+
+/**
+ * Per-gateway shared TTL cache of settled downstream GET bodies
+ * (`downstreamCacheTtlMs`). WHY the coalescing key: an entry may only answer a
+ * request that would have sent byte-for-byte the same GET, so one caller's
+ * forwarded credential never answers another's. WHY the raw text and not the
+ * parsed value: every hit is parsed and contract-read afresh, so no two
+ * requests ever share (and could mutate) one object. WHY a hard entry cap,
+ * oldest first: distinct keys (per-tenant headers, cursors) must not grow the
+ * process without bound. Failures are never stored, and every write clears it.
+ */
+export class DownstreamCache {
+  private readonly entries = new Map<string, CachedBody>();
+  /** Bumped by `clear`; a fill started before a clear is dropped (see `filler`). */
+  private generation = 0;
+
+  constructor(private readonly ttlMs: number) {}
+
+  /** The fresh body for `key`, if any; a stale entry is dropped on sight. */
+  get(key: string): SharedBody | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (Date.now() <= entry.expires) return entry;
+    this.entries.delete(key);
+    return undefined;
+  }
+
+  /**
+   * A one-shot store for `key`, taken when the GET is sent and called only
+   * once its body has passed the contract read. WHY it captures the
+   * generation: a GET in flight across a write may carry pre-write data, so
+   * if any clear happened meanwhile the body is not stored.
+   */
+  filler(key: string): (body: SharedBody) => void {
+    const generation = this.generation;
+    return (body) => {
+      if (generation !== this.generation) return;
+      // Re-inserted, so a refreshed key moves to the young end of the eviction order.
+      this.entries.delete(key);
+      if (this.entries.size >= MAX_CACHED_BODIES) {
+        const oldest = this.entries.keys().next();
+        if (!oldest.done) this.entries.delete(oldest.value);
+      }
+      this.entries.set(key, { status: body.status, text: body.text, expires: Date.now() + this.ttlMs });
+    };
+  }
+
+  /** Drops every entry: called when any write is sent and again when it settles. */
+  clear(): void {
+    this.generation += 1;
+    this.entries.clear();
+  }
+}
+
 /** How one unshared call is sent: GET without a body, or POST with a JSON one. */
 interface Send {
   method: 'GET' | 'POST';
@@ -404,7 +465,7 @@ const GET: Send = { method: 'GET' };
 
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
-  /** Set by the first `post`; from then on this request's GETs are never coalesced. */
+  /** Set by the first `post`; from then on this request's GETs are never coalesced nor cached. */
   private wrote = false;
   /** Per-request deadline in milliseconds for every downstream call. */
   readonly timeoutMs: number;
@@ -435,6 +496,8 @@ export class RestClient {
    * @param coalesce The gateway's in-flight registry (`coalesceInFlight`), or
    *   undefined. WHY optional here: the caller leaves it unset under NAIVE
    *   loaders, so the N+1 demonstration can never be hidden by sharing.
+   * @param cache The gateway's shared TTL cache (`downstreamCacheTtlMs`), or
+   *   undefined; left unset under NAIVE loaders for the same reason.
    */
   constructor(
     private readonly baseUrl: string,
@@ -444,6 +507,7 @@ export class RestClient {
     private readonly onCall?: DownstreamCallHook,
     private readonly signal?: AbortSignal,
     private readonly coalesce?: InFlightCalls,
+    private readonly cache?: DownstreamCache,
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -523,18 +587,22 @@ export class RestClient {
     this.checkClientPresent(path);
     const reader = read ?? parsedJson;
     // After this request wrote, its reads are never answered by a GET another
-    // request started before the write landed (read-your-write).
-    if (this.coalesce && !this.wrote) {
-      const url = this.buildUrl(path, params);
-      const key = this.coalesceKey(url);
-      // A join sends nothing, so it is neither budget-checked, counted nor reported.
-      const joined = this.coalesce.join(key);
-      if (joined) return this.wait(joined, path, joined.result.then((body) => readBody(path, body.status, body.text, reader)));
-      this.checkBudget();
-      this.track(path);
-      return this.sendShared(this.coalesce, key, url, path, reader);
+    // request started (or a body stored) before the write landed (read-your-write).
+    if ((!this.coalesce && !this.cache) || this.wrote) {
+      return this.sendCounted(path, () => this.buildUrl(path, params), GET, reader);
     }
-    return this.sendCounted(path, () => this.buildUrl(path, params), GET, reader);
+    const url = this.buildUrl(path, params);
+    const key = this.coalesceKey(url);
+    // A hit or a join sends nothing, so it is neither budget-checked, counted nor reported.
+    const hit = this.cache?.get(key);
+    if (hit) return readBody(path, hit.status, hit.text, reader);
+    const joined = this.coalesce?.join(key);
+    if (joined) return this.wait(joined, path, joined.result.then((body) => readBody(path, body.status, body.text, reader)));
+    const fill = this.cache?.filler(key);
+    if (!this.coalesce) return this.sendCounted(path, () => url, GET, reader, fill);
+    this.checkBudget();
+    this.track(path);
+    return this.sendShared(this.coalesce, key, url, path, reader, fill);
   }
 
   /**
@@ -548,24 +616,38 @@ export class RestClient {
     this.checkClientPresent(path);
     this.wrote = true;
     const init: Send = { method: 'POST', body: JSON.stringify(body) };
-    return this.sendCounted(path, () => joinBaseUrl(this.baseUrl, path), init, read);
+    // Cleared on send and again on settle, whatever the outcome: a GET that
+    // raced the write may have stored (or be about to store) pre-write data.
+    this.cache?.clear();
+    try {
+      return await this.sendCounted(path, () => joinBaseUrl(this.baseUrl, path), init, read);
+    } finally {
+      this.cache?.clear();
+    }
   }
 
   /**
    * Budget-checks, counts and sends one unshared call, firing the hook once
    * it settles. `url` is a thunk so an invalid base still fails AFTER
-   * `track`, as a counted, reported call.
+   * `track`, as a counted, reported call. `fill`, when given, stores the
+   * body once it has passed the contract read (a cache miss).
    */
-  private async sendCounted<T>(path: string, url: () => URL, init: Send, read: (body: unknown) => T): Promise<T> {
+  private async sendCounted<T>(
+    path: string,
+    url: () => URL,
+    init: Send,
+    read: (body: unknown) => T,
+    fill?: (body: SharedBody) => void,
+  ): Promise<T> {
     this.checkBudget();
     this.track(path);
-    if (!this.onCall) return this.send(path, url, init, read);
+    if (!this.onCall) return this.send(path, url, init, read, undefined, fill);
 
     const started = performance.now();
     let status: number | null = null;
     let verdict = OK;
     try {
-      return await this.send(path, url, init, read, (arrived) => (status = arrived));
+      return await this.send(path, url, init, read, (arrived) => (status = arrived), fill);
     } catch (err: unknown) {
       verdict = classify(err);
       throw err;
@@ -608,12 +690,18 @@ export class RestClient {
     url: URL,
     path: string,
     read: (body: unknown) => T,
+    fill?: (body: SharedBody) => void,
   ): Promise<T> {
     const started = performance.now();
     const call = registry.start(key, this.timeoutMs, (signal, abandoned, onStatus) =>
       this.fetchText(url, path, signal, abandoned, onStatus),
     );
-    const parsed = call.result.then((body) => readBody(path, body.status, body.text, read));
+    // Only the sender fills, so a coalesced miss is stored once, joiners or not.
+    const parsed = call.result.then((body) => {
+      const value = readBody(path, body.status, body.text, read);
+      fill?.(body);
+      return value;
+    });
     if (this.onCall) {
       const hook = this.onCall;
       const report = (verdict: Verdict): void =>
@@ -652,12 +740,15 @@ export class RestClient {
     init: Send,
     read: (body: unknown) => T,
     onStatus?: (status: number) => void,
+    fill?: (body: SharedBody) => void,
   ): Promise<T> {
     const target = url();
     const { signal, release } = this.callSignal();
     try {
-      const { status, text } = await this.fetchText(target, path, signal, this.signal, onStatus, init);
-      return readBody(path, status, text, read);
+      const body = await this.fetchText(target, path, signal, this.signal, onStatus, init);
+      const value = readBody(path, body.status, body.text, read);
+      fill?.(body);
+      return value;
     } finally {
       release();
     }

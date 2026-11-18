@@ -6,6 +6,7 @@ import { createContext, type GatewayContext } from './context.js';
 import {
   RestClient,
   InFlightCalls,
+  DownstreamCache,
   validateForwardHeaders,
   validateMaxDownstreamCalls,
   type DownstreamCallHook,
@@ -92,6 +93,19 @@ export interface GatewayOptions {
    * `downstreamCalls`. No effect under NAIVE loaders (`cache: false`).
    */
   coalesceInFlight?: boolean;
+  /**
+   * Opt-in (default off): for this many ms after a downstream GET succeeds,
+   * an identical GET (same URL and query string, same forwarded header values)
+   * from any request on this gateway is answered from a shared cache instead
+   * of the backend. WHY: polling dashboards and BFFs otherwise pay the full
+   * waterfall on every repeat read. The trade-off is staleness: a change made
+   * on the backend by anyone but this gateway shows up only once the TTL
+   * expires. Only contract-valid 2xx bodies are kept, at most 1000 entries
+   * (oldest evicted first), and every write this gateway sends clears it. A
+   * hit counts 0 in `downstreamCalls`, uses no `maxDownstreamCalls` unit and
+   * fires no `onDownstreamCall`. Never used by `/readyz` or under NAIVE loaders.
+   */
+  downstreamCacheTtlMs?: number;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -393,6 +407,8 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   const compressMinBytes = opts.compressMinBytes ?? 1024;
   // One registry per gateway, never module-global: two gateways never share a call.
   const inFlightCalls = opts.coalesceInFlight === true ? new InFlightCalls() : undefined;
+  const downstreamCache =
+    opts.downstreamCacheTtlMs === undefined ? undefined : new DownstreamCache(opts.downstreamCacheTtlMs);
 
   let shuttingDown = false;
   let inFlight = 0;
@@ -421,6 +437,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         // not cancel the check other probers share.
         signal: request.signal,
         inFlightCalls,
+        downstreamCache,
       });
       contexts.set(request, context);
     }

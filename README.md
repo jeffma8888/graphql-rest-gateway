@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1859%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1907%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -36,7 +36,7 @@ The REST backend is **bundled** (Fastify, canned JSON, artificial latency), so t
 
 **The fix.** [DataLoader](https://github.com/graphql/dataloader) coalesces all the per-key loads that happen within one tick of the event loop into a **single batched call**, and caches results for the life of the request. The same query drops to `1 + 1 + 1 = 3` downstream calls.
 
-**The migration story (strangler fig).** This is the canonical "wrap a legacy REST service in a graph" pattern: you stand up a GraphQL layer in front of existing REST endpoints, move clients over query-by-query, and never expose the underlying fan-out to callers. The gateway owns batching, pagination shape, and access control; the REST services stay as-is.
+**The migration story (strangler fig).** This is the canonical "wrap a legacy REST service in a graph" pattern: you stand up a GraphQL layer in front of existing REST endpoints, move clients over query-by-query, and never expose the underlying fan-out to callers. The gateway owns batching, pagination shape, and access control; the REST services stay as-is. When clients poll the same reads, the opt-in `downstreamCacheTtlMs` lets a repeat of the nested sample query cost 0 downstream calls instead of 3. The price is staleness: a change made behind the gateway's back shows up only after the TTL, so leave it off unless that window is acceptable.
 
 ---
 
@@ -115,6 +115,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
 | `GRAPHQL_PATH` | absolute path → `graphqlEndpoint` (no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`; not `/healthz` or `/readyz`) | `/graphql` |
 | `COMPRESS_MIN_BYTES` | non-negative integer or `off` → `compressMinBytes` (`0` compresses every GraphQL JSON reply) | `1024` |
 | `COALESCE_IN_FLIGHT` | `1`/`true` or `0`/`false` (case-sensitive) → `coalesceInFlight` | `0` (off) |
+| `DOWNSTREAM_CACHE_TTL_MS` | positive integer ≤ 2147483647 → `downstreamCacheTtlMs` | unset → no shared cache |
 
 `loaderOptions` and `onDownstreamCall` are library-only: they cannot be set from the environment, so pass them to `createGateway` in your own bootstrap.
 
@@ -233,6 +234,7 @@ A host prefix reaches the gateway unstripped: under Fastify's `app.register(plug
 | `graphqlEndpoint` | `string` | `/graphql` | Path at which GraphQL GET, POST, SSE and GraphiQL are served, e.g. `/api/graphql` under a host prefix; the old `/graphql` then 404s, and `/healthz` and `/readyz` stay at the root (absolute path, no trailing slash, query, fragment or `:`/`*`/`(`/`)`/`+`, not `/healthz` or `/readyz`, else `TypeError`) |
 | `compressMinBytes` | `number \| false` | `1024` | Smallest identity body (bytes) of a non-streaming GraphQL JSON response that is gzip- or deflate-compressed when the client's `accept-encoding` allows it (q-values honoured, `br` is not offered); `@defer` multipart and SSE streams are never compressed; `0` compresses every GraphQL JSON reply, `false` = off (non-negative integer or `false`, else `TypeError`) |
 | `coalesceInFlight` | `boolean` | `false` | Opt-in: while a downstream GET is in flight, an identical one from any concurrent request on the same gateway waits for it instead of being sent again; the key is the full URL (query string included) plus the forwarded header values, so callers with different `forwardHeaders` values never share; nothing is cached, the entry goes when the call settles; the request that sent the call counts it, and a joined call counts 0 in `downstreamCalls` and in `maxDownstreamCalls`, and fires no `onDownstreamCall` event; no effect under NAIVE loaders (`boolean`, else `TypeError`) |
+| `downstreamCacheTtlMs` | `number` | unset → no shared cache | Opt-in: for this many ms after a downstream GET succeeds, an identical GET (same key as `coalesceInFlight`: full URL plus forwarded header values) from any request on the same gateway is answered from a per-gateway shared cache at 0 downstream calls; only contract-valid 2xx bodies are kept, at most 1000 entries (oldest evicted first), and every write the gateway sends clears it; a hit counts 0 in `downstreamCalls` and in `maxDownstreamCalls` and fires no `onDownstreamCall` event; never used by `/readyz`, no effect under NAIVE loaders; trade-off: a change made on the backend by anyone but this gateway is seen only after the TTL (positive integer, maximum 2147483647, else `RangeError`) |
 
 `createGateway` validates the whole object synchronously, before anything is built: an unknown key throws `TypeError` with a did-you-mean hint (`maxComplexty` → `maxComplexity`), even when its value is `undefined`, and an explicit `undefined` value means omitted. Limits are unlimited only by omission (`maxDownstreamCalls`) or default (`maxDepth` 10, `maxComplexity` 1000); `NaN`/`Infinity` are rejected.
 
@@ -317,7 +319,7 @@ rest-client.ts      one HTTP call per invocation; counts calls (the instrument
 Fastify REST backend (bundled, canned JSON, artificial latency)
 ```
 
-**Where DataLoader lives and why it's request-scoped.** Loaders are built fresh inside `createContext` on **every request** (`src/gateway/context.ts` -> `buildLoaders`). This is deliberate and it's the classic senior footgun if you get it wrong: a DataLoader carries a per-instance cache, so a **module-level / shared** loader would (a) leak one user's data into another user's response and (b) serve stale rows forever. Request scoping bounds both the cache and the batch window to a single operation.
+**Where DataLoader lives and why it's request-scoped.** Loaders are built fresh inside `createContext` on **every request** (`src/gateway/context.ts` -> `buildLoaders`). This is deliberate and it's the classic senior footgun if you get it wrong: a DataLoader carries a per-instance cache, so a **module-level / shared** loader would (a) leak one user's data into another user's response and (b) serve stale rows forever. Request scoping bounds both the cache and the batch window to a single operation. The one cross-request cache is opt-in (`downstreamCacheTtlMs`) and sits below the loaders, in `rest-client.ts`. It stores raw downstream GET bodies, never resolved GraphQL data, so per-request field auth such as `Review.reviewer` still runs on every hit. It is keyed by URL plus forwarded header values, so a caller's credential never answers another caller. It trades bounded staleness (the TTL) for 0 calls on repeat reads, and every write the gateway sends clears it.
 
 The `LoaderOptions` flag is what powers the benchmark: `BATCHED = { batch: true, cache: true }` collapses keys in a tick into one call; `NAIVE = { batch: false, cache: false }` makes DataLoader call the batch function once per key, faithfully reproducing the N+1 explosion so we can measure it. Both constants (frozen) and the `LoaderOptions` type are importable from the package entry, so a library user can reproduce the comparison: with `import { createGateway, NAIVE } from 'graphql-rest-gateway'`, `createGateway({ restBaseUrl, loaderOptions: NAIVE })` makes 21 downstream calls for the benchmark query where the default makes 3.
 
@@ -405,7 +407,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1859 tests across 74 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
+`npm test` — 1907 tests across 75 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -444,6 +446,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **@defer with @skip/@include** (`test_iter102_behavior.test.ts`): under a JSON-only `accept`, a defer excluded by `@skip(if: true)` or `@include(if: false)` (literal, variable, variable default, a skipped ancestor field or a skipped fragment spread) gets the plain 200 reply, body-identical to the query without that selection apart from `extensions`, at the same downstream call count; skip wins over include; an active defer beside an excluded one, or a second included spread of the same fragment, still gets 406 `DEFER_NOT_ACCEPTED` at 0 calls; streaming clients and GET behave as before.
 - **CLI opt-ins** (`test_iter103_behavior.test.ts`): `npm start` honours `COALESCE_IN_FLIGHT` (a 50-request burst sums ≤ 15 downstream calls with `1`/`true`, 150 when unset, `0`, `false` or empty) and `COMPRESS_MIN_BYTES` (`0` gzips a small reply, `off` and `5000` leave the nested sample uncompressed, unset keeps 1024), rejects bad values before listening with the variable and quoted value, and ties the exported `OPTION_ENV` map to both README tables and the CLI's `env.NAME` reads.
 - **Git-free suite** (`test_iter104_behavior.test.ts`): runs the N+1 guard in throwaway repo copies with no git metadata. A clean copy passes, and changing `toBe(3)` to `toBe(4)`, renaming the batched title, `it.skip`, `it.only` or dropping the identical-data assertion each turn it red. It also checks that no file under `test/` spawns git, that the oracle still pins 21 and 3, and that the iter-62 / iter-80 `dist/` snapshot checks survive.
+- **Shared downstream cache** (`test_iter105_behavior.test.ts`): with `downstreamCacheTtlMs` a repeat nested sample query costs 0 downstream calls, 0 hook events and `downstreamCalls.total` 0 (3 + 3 when unset), a partial hit sends only the missing hop, entries expire after the TTL, never cross forwarded credentials or gateways, keep per-request `reviewer` redaction, never store a 500, off-contract, timed-out or reset answer, are cleared by every sent write, cap at 1000 (oldest evicted), and leave NAIVE at 21, `/readyz` at 1 call per probe and cached hits outside `maxDownstreamCalls`; `DOWNSTREAM_CACHE_TTL_MS` boots the same and fails fast on `0`, `abc`, `-5` and `2147483648`.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

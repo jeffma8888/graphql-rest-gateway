@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-105
+    lenses: simplification-and-deletion, performance-and-throughput
+    - Candidate A1 -- Delete the hand-maintained README test-count and coverage figures (2 badges, the §8 "N tests across M files" literal, the §8 coverage line) and the 19 `it`s in 14 files that pin them, one of which forbids fixing a figure that is 11 pp stale
+    - Candidate A2 -- `check-backend` probes through the gateway's own data sources: delete its second copy of the 5 route paths and query-param names (row 63)
+    - Candidate A3 -- `npm start` mounts `gateway.nodeListener` instead of building a second drain-aware listener: delete the CLI's duplicate `createDrainAwareListener`, its `shuttingDown` flag, `FLUSH_TIMEOUT_MS` and the second `flushed()` deadline
+    - Candidate B1 -- Opt-in shared TTL for downstream GETs (`downstreamCacheTtlMs`, row 9 shared half): a repeat SAMPLE read within the TTL goes from 3 calls and 43 ms to 0 calls and 0.5 ms
+    - Candidate B2 -- One batched POST cannot freeze the event loop: token budget per edge HTTP request under `maxBatchSize` (row 37), a 200-doc cap-sized batch answers in about 150 ms (at most 4 docs validated, about 34 ms each) instead of stalling every caller for 6.8 s
+    - Candidate B3 -- Brotli at a pinned quality 5 for clients that accept it (row 101): SAMPLE goes over the wire as 403 B instead of 488 B (−17 %) for about 8 µs more CPU
+    winner: B1
+    ship: pending (not yet decided)
   iter-104
     lenses: integration-and-adoption), simplification-and-deletion
     - Candidate A1 -- The `npm start` boot log names the effective configuration, so an operator can see that `COALESCE_IN_FLIGHT=1` took effect, and it never prints REST_BASE_URL credentials
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One positive-integer rule: `maxBatchSize` and `maxDownstreamCalls` go through options.ts `assertPositiveInt`, and the private `validateMaxBatchSize` and the caller-less `RestClient.resetStats()` are deleted (row 60)
     - Candidate B3 -- One codegen-drift guard replaces 4 copies that each re-run graphql-codegen (iter62, 71, 78, 83)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 688f213
   iter-103
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Admission control stops pricing selections `@skip`/`@include` excludes (row 69): `@include(if:$details)` with `$details:false` costs what the executor runs
@@ -711,4 +721,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-71 scouted iterations
+72 scouted iterations

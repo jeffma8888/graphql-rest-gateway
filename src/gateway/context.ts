@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { RestClient, type DownstreamCallHook, type InFlightCalls } from './datasources/rest-client.js';
+import { RestClient, type DownstreamCache, type DownstreamCallHook, type InFlightCalls } from './datasources/rest-client.js';
 import { buildDataSources, type DataSources } from './datasources/index.js';
 import { buildLoaders, BATCHED, type Loaders, type LoaderOptions } from './loaders.js';
 import { buildServices, type Services } from './services.js';
@@ -54,6 +54,12 @@ export interface CreateContextOptions {
    * shows every call it makes. Unset = every call is sent by its own request.
    */
   inFlightCalls?: InFlightCalls;
+  /**
+   * The gateway's shared TTL cache of downstream GET bodies
+   * (`downstreamCacheTtlMs`); forwarded to RestClient. Ignored under
+   * `loaderOptions.cache === false`, like `inFlightCalls`. Unset = no cache.
+   */
+  downstreamCache?: DownstreamCache;
 }
 
 /**
@@ -85,6 +91,7 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
       opts.onDownstreamCall,
       opts.signal,
       loaderOptions.cache ? opts.inFlightCalls : undefined,
+      loaderOptions.cache ? opts.downstreamCache : undefined,
     );
   const datasources = buildDataSources(restClient);
   const loaders = buildLoaders(datasources, loaderOptions);

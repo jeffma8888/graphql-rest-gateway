@@ -60,7 +60,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
     expect(readme).toContain('`downstreamTimeoutMs`');
   });
 
-  it('GatewayOptions table has exactly 12 data rows', () => {
+  it('GatewayOptions table has exactly 13 data rows', () => {
     const optionsIdx = readme.indexOf('`GatewayOptions`');
     const nextHeadingIdx = readme.indexOf('`BackendOptions`', optionsIdx);
     const section = readme.slice(optionsIdx, nextHeadingIdx);
@@ -68,7 +68,7 @@ describe('EB1 — README GatewayOptions table completeness', () => {
       .split('\n')
       .filter((line) => line.startsWith('|') && !line.includes('---'));
     const dataRows = tableRows.slice(1);
-    expect(dataRows.length).toBe(12); // 9th row: onDownstreamCall (iter-77), 10th: graphqlEndpoint (iter-98), 11th: compressMinBytes (iter-99), 12th: coalesceInFlight (iter-100)
+    expect(dataRows.length).toBe(13); // 9th row: onDownstreamCall (iter-77), 10th: graphqlEndpoint (iter-98), 11th: compressMinBytes (iter-99), 12th: coalesceInFlight (iter-100), 13th: downstreamCacheTtlMs (iter-105)
   });
 });
 

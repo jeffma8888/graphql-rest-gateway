@@ -31,6 +31,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   graphqlEndpoint: true,
   compressMinBytes: true,
   coalesceInFlight: true,
+  downstreamCacheTtlMs: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -205,6 +206,7 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertPositiveInt('maxDepth', opts.maxDepth);
   assertPositiveInt('maxComplexity', opts.maxComplexity);
   assertPositiveInt('downstreamTimeoutMs', opts.downstreamTimeoutMs, MAX_TIMEOUT_MS);
+  assertPositiveInt('downstreamCacheTtlMs', opts.downstreamCacheTtlMs, MAX_TIMEOUT_MS);
   assertLoaderOptions(opts.loaderOptions);
   assertFunction('onDownstreamCall', opts.onDownstreamCall);
   assertGraphqlEndpoint(opts.graphqlEndpoint);

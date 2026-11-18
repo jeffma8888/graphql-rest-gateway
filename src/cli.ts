@@ -155,6 +155,7 @@ export const OPTION_ENV: Record<keyof GatewayOptions, string | null> = {
   graphqlEndpoint: 'GRAPHQL_PATH',
   compressMinBytes: 'COMPRESS_MIN_BYTES',
   coalesceInFlight: 'COALESCE_IN_FLIGHT',
+  downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
 };
 
 interface CliConfig {
@@ -189,6 +190,7 @@ function parseEnv(env: Env): CliConfig {
       graphqlEndpoint: readGraphqlPath(env.GRAPHQL_PATH),
       compressMinBytes: readCompressMinBytes(env.COMPRESS_MIN_BYTES),
       coalesceInFlight: readFlag('COALESCE_IN_FLIGHT', env.COALESCE_IN_FLIGHT),
+      downstreamCacheTtlMs: readInt('DOWNSTREAM_CACHE_TTL_MS', env.DOWNSTREAM_CACHE_TTL_MS, 1, MAX_TIMEOUT_MS),
     },
   };
 }

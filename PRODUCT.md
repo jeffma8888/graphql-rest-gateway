@@ -28,7 +28,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 6 | Structured NOT_FOUND errors for root-level entity queries | done | 29 |
 | 7 | Machine-readable benchmark output (--json, CI exit code) | done | 38 |
 | 8 | GraphQL config file (.graphqlrc.yml) for editor/codegen discovery | done | 26 |
-| 9 | Response caching layer (per-request + optional shared TTL cache) | planned | — |
+| 9 | Response caching layer: per-request (DataLoader) + opt-in shared TTL for downstream GETs (`downstreamCacheTtlMs` / `DOWNSTREAM_CACHE_TTL_MS`): repeat SAMPLE 3 → 0 calls; key = URL + forwarded headers, 2xx contract-valid only, 1000-entry cap, cleared on write, inert under NAIVE/`/readyz` (iter-105 scout B1) | done | 105 |
 | 10 | OpenTelemetry tracing spans per resolver and downstream call (seam: row 71 `onDownstreamCall`) | planned | — |
 | 11 | Extension-code README drift guard + doc backfill | done | 34 |
 | 12 | Scope-based field authorization (pii scope on Review.reviewer) | done | 35 |
@@ -135,3 +135,5 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 113 | Exported `optionsFromEnv(env)` so embedders reuse the CLI's fail-fast env readers; `startFromEnv` calls it (one reader path) (iter-104 scout A3) | planned | — |
 | 114 | `graphql-rest-gateway/types` subpath exports the codegen types (`Book`, `MutationAddReviewArgs`, `Resolvers`; 3× TS2305 today) (iter-104 scout A2) | planned | — |
 | 115 | One codegen-drift guard replaces the 4 sandbox codegen re-runs in test_iter62/71/78/83 (iter-104 scout B3) | planned | — |
+| 116 | Delete the hand-kept README test-count/coverage figures (2 badges, §8 literals; coverage claims ~86 % lines vs measured 97.7 %) and the 19 `it`s pinning them (iter-105 scout A1) | planned | — |
+| 117 | `npm start` mounts `gateway.nodeListener`; drop the CLI's duplicate drain listener, `FLUSH_TIMEOUT_MS` and second deadline (iter-105 scout A3) | planned | — |
