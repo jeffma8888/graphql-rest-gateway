@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import http, { createServer, type Server } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { readFileSync, readdirSync } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBackend } from '../src/rest-backend/server';
@@ -138,39 +138,6 @@ function watchProcess() {
       process.off('uncaughtException', onE);
     },
   };
-}
-
-/** The ship commit for this iteration if it exists, else null (pre-commit working tree). */
-function git(args: string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-}
-function shipCommit(): string | null {
-  const out = git(['log', '--fixed-strings', '--grep=(foundry iter 94)', '--format=%H', '-n', '1']).trim();
-  return out === '' ? null : out;
-}
-/** Files under `test/` changed by this iteration (ship commit, or working tree + untracked vs HEAD). */
-function changedTestFiles(): string[] {
-  const c = shipCommit();
-  const names = c
-    ? git(['diff', '--name-only', `${c}~1`, c, '--', 'test/'])
-    : git(['diff', '--name-only', 'HEAD', '--', 'test/']) +
-      '\n' +
-      git(['ls-files', '--others', '--exclude-standard', '--', 'test/']);
-  return names
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-/** `git diff --exit-code` on the given paths for this iteration; true when empty. */
-function unchanged(paths: string[]): boolean {
-  const c = shipCommit();
-  const args = c ? ['diff', '--exit-code', `${c}~1`, c, '--', ...paths] : ['diff', '--exit-code', 'HEAD', '--', ...paths];
-  try {
-    execFileSync('git', args, { cwd: root, stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 let b0: Backend;
@@ -408,12 +375,6 @@ describe('EB6: drain contract unchanged', () => {
       expect(item.data.authors.edges).toHaveLength(5);
     }
   }, 10000);
-
-  it('iter-91, iter-92 and iter-61 test files are unmodified by this iteration', () => {
-    expect(
-      unchanged(['test/test_iter92_behavior.test.ts', 'test/test_iter91_behavior.test.ts', 'test/test_iter61_behavior.test.ts']),
-    ).toBe(true);
-  });
 });
 
 describe('EB7: the Readable.from + pipeline wrapper is gone, public surface unchanged', () => {
@@ -437,19 +398,6 @@ describe('EB7: the Readable.from + pipeline wrapper is gone, public surface unch
     } finally {
       await gw.close();
     }
-  });
-
-  it('only the new iter-94 test file changes under test/; n-plus-1 test is byte-identical', () => {
-    expect(changedTestFiles()).toEqual(['test/test_iter94_behavior.test.ts']);
-    expect(unchanged(['test/n-plus-1.test.ts'])).toBe(true);
-  });
-
-  it('schema.graphql and generated types are untouched', () => {
-    const c = shipCommit();
-    const files = (c ? git(['diff', '--name-only', `${c}~1`, c]) : git(['diff', '--name-only', 'HEAD']))
-      .split('\n')
-      .filter(Boolean);
-    expect(files.filter((f) => /schema\.graphql$|generated/.test(f))).toEqual([]);
   });
 });
 

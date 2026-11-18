@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import http, { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { readFileSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBackend } from '../src/rest-backend/server';
@@ -542,18 +541,5 @@ describe('EB13: docs', () => {
     const files = readdirSync(resolve(root, 'test')).filter((f) => f.endsWith('.test.ts'));
     expect(Number(line![2])).toBe(files.length);
     expect(Number(line![1])).toBeGreaterThan(1566);
-  });
-});
-
-// ---------- EB14 ----------
-describe('EB14: the oracle is untouched', () => {
-  it('test/n-plus-1.test.ts is byte-identical to HEAD', () => {
-    const out = execFileSync('git', ['diff', 'HEAD', '--', 'test/n-plus-1.test.ts'], { cwd: root, encoding: 'utf8' });
-    expect(out).toBe('');
-    const status = execFileSync('git', ['status', '--porcelain', '--', 'test/n-plus-1.test.ts'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-    expect(status).toBe('');
   });
 });

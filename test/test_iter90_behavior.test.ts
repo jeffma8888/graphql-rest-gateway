@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBackend } from '../src/rest-backend/server';
@@ -371,19 +370,6 @@ describe('EB8 - unchanged paths', () => {
     expect(r.json.errors![0]!.extensions?.code).toBe(code);
     expect(r.json.errors![0]!.message).toContain('/authors/by-ids');
     expect(totalOf(r.json)).toBe(1);
-  });
-
-  it('the N+1 regression test is byte-identical to HEAD, and the only edited old test is test_iter77', () => {
-    // Pinned to the iter-90 ship commit (modified files only; its own new file is `A`), so a later
-    // iteration's uncommitted re-pin cannot turn this red. Pre-commit, it checks the working tree.
-    const git = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-    const ship = git(['log', '--fixed-strings', '--grep=(foundry iter 90)', '--format=%H', '-n', '1']).trim();
-    const range = ship === '' ? ['HEAD'] : ['--diff-filter=M', `${ship}~1`, ship];
-    const diff = git(['diff', '--name-only', ...range, '--', 'test/'])
-      .split('\n')
-      .filter(Boolean);
-    expect(diff).not.toContain('test/n-plus-1.test.ts');
-    for (const f of diff) expect(['test/test_iter77_behavior.test.ts']).toContain(f);
   });
 });
 

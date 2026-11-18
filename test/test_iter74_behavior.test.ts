@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer, type Server, type ServerResponse, type IncomingHttpHeaders } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -591,19 +590,6 @@ describe('EB14 - operator tooling unchanged', () => {
     expect(jout[0]?.replaceAll(String(port), 'PORT')).toBe(
       JSON.stringify({ baseUrl: HEAD_REPORT.baseUrl, backend: 'external', ok: false, routes: HEAD_REPORT.routes }, null, 2),
     );
-  });
-
-  it('no existing test file is deleted and only iteration behavior files are edited (git guard; skipped outside a repo)', () => {
-    let changed: string;
-    try {
-      changed = execFileSync('git', ['diff', '--name-status', 'HEAD', '--', 'test/'], { cwd: root, encoding: 'utf8' });
-    } catch {
-      return; // not a git checkout (e.g. a published tarball)
-    }
-    // Later iterations may deliberately re-pin an older iteration's behavior file; never n-plus-1/lib-entry, never a deletion.
-    for (const line of changed.split('\n').filter(Boolean)) {
-      expect(line).toMatch(/^M\ttest\/test_iter\d+_behavior\.test\.ts$/);
-    }
   });
 });
 

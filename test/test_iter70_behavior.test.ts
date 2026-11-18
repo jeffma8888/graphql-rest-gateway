@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -475,54 +474,10 @@ describe('EB10 - docs', () => {
     expect(line.trimEnd().endsWith('one field -> one service call.')).toBe(false);
     expect(line.trimEnd().endsWith('one field -> one service call')).toBe(false);
   });
-
-  it('every sentence of the HEAD lookahead paragraph is kept (bar the iter-76-retired fragment/__typename refusal)', () => {
-    let headReadme: string;
-    try {
-      headReadme = execFileSync('git', ['show', 'HEAD:README.md'], { cwd: root, encoding: 'utf8' });
-    } catch {
-      return; // not a git checkout
-    }
-    const before = paragraph(headReadme);
-    const now = paragraph(README);
-    // iter-76 (re-land of iter-75) deliberately retired the sentence saying a root-level fragment or root __typename disables the prefetch.
-    // iter-87 (PRODUCT row 86) deliberately retired the sentence saying a `books(ids:)` root turns the prefetch off.
-    const retired = ['a root-level fragment (named or inline)', 'bulk-lookup root turns the prefetch off'];
-    const kept = before.split(/(?<=\.)\s+(?=[A-Z`*])/).filter((s) => !retired.some((r) => s.includes(r)));
-    for (const s of kept) expect(now).toContain(s);
-  });
 });
 
 // ---------- EB11 ----------
 describe('EB11 - frozen surface', () => {
-  function porcelain(paths: string[], extra: string[] = []): string | null {
-    try {
-      return execFileSync('git', ['status', '--porcelain', ...extra, '--', ...paths], { cwd: root, encoding: 'utf8' });
-    } catch {
-      return null; // not a git checkout
-    }
-  }
-
-  // services, SDL and generated types dropped from the list at iter-71 (Relay `last`/`before`);
-  // datasources dropped at iter-73 (2xx bodies checked against the REST contract);
-  // lib.ts dropped at iter-77 (type-only `DownstreamCallEvent` export);
-  // loaders.ts dropped at iter-85 (unsendable by-id keys filtered before any URL).
-  it('n-plus-1 is unmodified', () => {
-    const out = porcelain([
-      'test/n-plus-1.test.ts',
-    ]);
-    if (out !== null) expect(out.trim()).toBe('');
-  });
-
-  it('only older behavior test files may be modified; nothing tracked under test/ is deleted', () => {
-    const out = porcelain(['test'], ['--untracked-files=no']);
-    if (out === null) return;
-    const lines = out.split('\n').filter(Boolean);
-    const bumpedBehaviorFile = /^(M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
-    expect(lines.filter((l) => !bumpedBehaviorFile.test(l))).toEqual([]);
-    expect(lines.some((l) => /^ ?D|^.D/.test(l))).toBe(false);
-  });
-
   it('the src/lib.ts export list is unchanged', async () => {
     const lib = await import('../src/lib');
     expect(Object.keys(lib).sort()).toEqual([

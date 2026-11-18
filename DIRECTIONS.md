@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-104
+    lenses: integration-and-adoption), simplification-and-deletion
+    - Candidate A1 -- The `npm start` boot log names the effective configuration, so an operator can see that `COALESCE_IN_FLIGHT=1` took effect, and it never prints REST_BASE_URL credentials
+    - Candidate A2 -- TypeScript consumers can import the codegen contract types: `import type { Book, Review, MutationAddReviewArgs, Resolvers } from 'graphql-rest-gateway/types'`
+    - Candidate A3 -- Embedders reuse the CLI's fail-fast env contract: exported `optionsFromEnv(env)` returns the same validated `GatewayOptions` that `npm start` builds
+    - Candidate B1 -- One git-free content guard for the N+1 oracle replaces 18 "n-plus-1 is byte-identical to HEAD" copies (row 77), so the suite passes outside a git checkout
+    - Candidate B2 -- One positive-integer rule: `maxBatchSize` and `maxDownstreamCalls` go through options.ts `assertPositiveInt`, and the private `validateMaxBatchSize` and the caller-less `RestClient.resetStats()` are deleted (row 60)
+    - Candidate B3 -- One codegen-drift guard replaces 4 copies that each re-run graphql-codegen (iter62, 71, 78, 83)
+    winner: B1
+    ship: pending (not yet decided)
   iter-103
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Admission control stops pricing selections `@skip`/`@include` excludes (row 69): `@include(if:$details)` with `$details:false` costs what the executor runs
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `check-backend` covers the write path: an opt-in `--writes` probe sends `POST /reviews` a deliberately invalid body and requires the contract's 400, so a read-only legacy backend fails pre-flight instead of making `addReview` claim real books do not exist
     - Candidate B3 -- TypeScript consumers can import the codegen'd contract types: `import type { Book, Review, MutationAddReviewArgs, Resolvers } from 'graphql-rest-gateway/types'` (and the core shapes from the entry)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED d578b54
   iter-102
     lenses: new-capability, hardening/DX
     - Candidate A1 -- Second write verb: `Mutation.deleteReview(id: ID!): Review!` → bundled `DELETE /reviews/:id` at 1 call, auth-gated, read-your-write (row 107)
@@ -701,4 +711,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-70 scouted iterations
+71 scouted iterations

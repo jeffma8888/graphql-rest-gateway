@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGateway, buildBackend, NAIVE } from '../src/lib';
@@ -365,10 +364,6 @@ describe('iter-79 EB11: the N+1 regression oracle is unchanged', () => {
     const n = await admitted(BENCHMARK_QUERY, undefined, naive);
     expect(n.calls).toBe(21);
     expect(n.data).toEqual(b.data);
-  });
-  it('test/n-plus-1.test.ts matches the committed HEAD copy', () => {
-    const committed = execFileSync('git', ['show', 'HEAD:test/n-plus-1.test.ts'], { cwd: root, encoding: 'utf8' });
-    expect(readFileSync(resolve(root, 'test/n-plus-1.test.ts'), 'utf8')).toBe(committed);
   });
 });
 

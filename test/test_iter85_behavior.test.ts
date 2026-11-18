@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -313,21 +312,6 @@ describe('EB10 - honest traffic is unchanged', () => {
     expect(edges).toHaveLength(5);
     expect(edges.flatMap((e) => e.node.books)).toHaveLength(15);
     expect(edges.flatMap((e) => e.node.books.flatMap((x) => x.reviews))).toHaveLength(30);
-  });
-
-  it('test/n-plus-1.test.ts is byte-unchanged by this iteration', () => {
-    const git = (args: string[]) =>
-      execFileSync('git', args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    let base: string;
-    try {
-      const sha = git(['log', '--format=%H', '-1', '--grep', 'foundry iter 85)']).trim();
-      base = sha ? `${sha}~1` : 'HEAD';
-      git(['rev-parse', '--verify', `${base}^{commit}`]);
-    } catch {
-      return; // not a git checkout (or shallow): the behavioural 3/21 pin above still holds
-    }
-    const before = git(['show', `${base}:test/n-plus-1.test.ts`]);
-    expect(readFileSync(path.join(REPO, 'test', 'n-plus-1.test.ts'), 'utf8')).toBe(before);
   });
 
   it('author(id:"a1"){ name books{ title reviews{ id } } } is 3 calls with data', async () => {

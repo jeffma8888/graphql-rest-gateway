@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import * as lib from '../src/lib';
 import { type LoaderOptions, NAIVE, BATCHED } from '../src/lib';
 import { NAIVE as INTERNAL_NAIVE, BATCHED as INTERNAL_BATCHED } from '../src/gateway/loaders';
@@ -442,19 +442,5 @@ describe('EB9 no behavior drift', () => {
     const parsed = JSON.parse(line!) as { naive: { calls: number }; batched: { calls: number } };
     expect(parsed.naive.calls).toBe(21);
     expect(parsed.batched.calls).toBe(3);
-  });
-
-  it('tracked test files (incl. n-plus-1) are byte-unchanged; only new behavior files appear', () => {
-    const out = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'test'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-    const lines = out.split('\n').filter(Boolean);
-    const newBehaviorFile = /^(\?\?|A ) test\/test_iter\d+_behavior\.test\.ts$/;
-    // An older behavior file may be MODIFIED (a pinned count bumped for a new option);
-    // n-plus-1, lib-entry and every other non-behavior test stay byte-frozen, nothing is deleted.
-    const bumpedBehaviorFile = /^(M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
-    expect(lines.filter((l) => !newBehaviorFile.test(l) && !bumpedBehaviorFile.test(l))).toEqual([]);
-    expect(lines.some((l) => /^ ?D|^.D/.test(l))).toBe(false);
   });
 });

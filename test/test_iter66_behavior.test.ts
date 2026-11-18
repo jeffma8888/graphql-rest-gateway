@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGateway, buildBackend, NAIVE } from '../src/lib';
@@ -440,18 +439,5 @@ describe('EB13 - unchanged', () => {
     const s = await post(g, { query: NESTED });
     expect(single(s).errors).toBeUndefined();
     expect(s.calls).toBe(21);
-  });
-
-  it('non-behavior tracked tests are byte-identical to HEAD; only behavior files are new or modified', () => {
-    const status = execFileSync('git', ['status', '--porcelain', '--', 'test'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-    const lines = status.split('\n').filter((l) => l.trim() !== '');
-    // An older behavior file may be MODIFIED (a HEAD-pin path list narrowed by a later slice);
-    // n-plus-1, lib-entry and every other non-behavior test stay byte-frozen, nothing is deleted.
-    const allowed = /^(\?\?|A |M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
-    expect(lines.filter((l) => !allowed.test(l))).toEqual([]);
-    expect(lines.some((l) => /^ ?D|^.D/.test(l))).toBe(false);
   });
 });

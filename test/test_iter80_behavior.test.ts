@@ -146,11 +146,6 @@ function distSnapshot(): string {
   return `present:${statSync(distDir).mtimeMs}:${files.join('|')}`;
 }
 
-async function gitStatus(): Promise<string> {
-  const r = await runFile('git', ['status', '--porcelain', '--untracked-files=all'], REPO, cleanEnv());
-  return r.stdout;
-}
-
 function firstLine(file: string): string {
   return readFileSync(file, 'utf8').split('\n')[0]!;
 }
@@ -187,7 +182,7 @@ let build: Run;
 let pack: Run;
 let dryRun: Run;
 let rebuild: Run;
-let before: { porcelain: string; dist: string };
+let before: { dist: string };
 const runs = new Map<string, Run>();
 let eb8Port = 0;
 let eb10Port = 0;
@@ -200,7 +195,7 @@ const ARG_CASES = [
 const validEnv = () => cleanEnv({ PORT: '0', REST_LATENCY_MS: '0' });
 
 beforeAll(async () => {
-  before = { porcelain: await gitStatus(), dist: distSnapshot() };
+  before = { dist: distSnapshot() };
   tmp = mkdtempSync(path.join(os.tmpdir(), 'gw-iter80-'));
 
   // Package staging dir: the manifest + root assets the `files` field ships, dist built from the worktree.
@@ -489,9 +484,8 @@ describe('EB11 the repo path is unchanged', () => {
   });
 
   // Runs last in file order: everything above built/packed/ran under os.tmpdir().
-  it('the repo dist/ and git status are unchanged by this file', async () => {
+  it('the repo dist/ is unchanged by this file', () => {
     expect(distSnapshot()).toBe(before.dist);
-    expect(await gitStatus()).toBe(before.porcelain);
   });
 });
 

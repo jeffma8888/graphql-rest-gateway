@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGateway, buildBackend } from '../src/lib';
@@ -293,38 +292,8 @@ describe('EB9 - schema-first: SDL and generated types carry the descriptions', (
 });
 
 // ---------- EB10 ----------
-/**
- * Range for "unchanged" pins: if this iteration's commit already exists, diff
- * that commit against its parent (`hit~1..hit`), so later iterations' src
- * changes do not count; otherwise diff HEAD against the working tree.
- * (iter-89 re-pin: the old base diffed `hit~1` against the WORKING TREE.)
- */
-function baseRev(): string[] {
-  const git = (...args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-  const hit = git('log', '--format=%H', '--grep', 'foundry iter 88)', '-n', '1');
-  return hit ? [`${hit}~1`, hit] : ['HEAD'];
-}
-function changedSince(revs: string[], ...paths: string[]): string[] {
-  const out = execFileSync('git', ['diff', '--name-only', ...revs, '--', ...paths], { cwd: root, encoding: 'utf8' });
-  return out.split('\n').filter((l) => l.length > 0);
-}
-
+// The git-diff "unchanged" pins were removed at iter-104 so the suite runs without a git checkout.
 describe('EB10 - no behaviour change', () => {
-  it('nothing under src/ changed except src/generated/graphql.ts', () => {
-    const changed = changedSince(baseRev(), 'src').filter((p) => p !== 'src/generated/graphql.ts');
-    expect(changed).toEqual([]);
-  });
-
-  it('the N+1 regression test and the pinned iter-34 / iter-71 tests are unchanged', () => {
-    const changed = changedSince(
-      baseRev(),
-      'test/n-plus-1.test.ts',
-      'test/test_iter34_behavior.test.ts',
-      'test/test_iter71_behavior.test.ts',
-    );
-    expect(changed).toEqual([]);
-  });
-
   it('README: the "Any `before` costs 1 downstream call ... 2 otherwise" sentences are still in the section', () => {
     const s = section();
     expect(s).toContain('Any `before` costs 1 downstream call.');

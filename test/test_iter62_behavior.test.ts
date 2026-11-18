@@ -128,16 +128,6 @@ function distSnapshot(): string {
   return `present:${statSync(distDir).mtimeMs}:${files.join('|')}`;
 }
 
-function gitStatus(): Promise<Run> {
-  return run(
-    [
-      '-e',
-      "const r=require('node:child_process').spawnSync('git',['status','--porcelain','--untracked-files=all'],{encoding:'utf8'});process.stdout.write(r.stdout||'');process.exit(r.status??1)",
-    ],
-    REPO,
-  );
-}
-
 let tmp = '';
 let pkg = '';
 let consumer = '';
@@ -149,11 +139,11 @@ let mainRun: Run;
 let mainRunNoSdl: Run;
 let barrelRun: Run;
 let tscRun: Run;
-let before: { porcelain: string; dist: string };
+let before: { dist: string };
 const fileStart = Date.now();
 
 beforeAll(async () => {
-  before = { porcelain: (await gitStatus()).stdout, dist: distSnapshot() };
+  before = { dist: distSnapshot() };
 
   tmp = mkdtempSync(path.join(os.tmpdir(), 'gw-iter62-'));
   pkg = path.join(tmp, 'pkg');
@@ -436,31 +426,13 @@ describe('EB9 no repo pollution, dev paths unchanged', () => {
     }
   });
 
-  it('existing tests (incl. N+1 and lib-entry) are unmodified in the working tree', async () => {
-    const r = await run(
-      [
-        '-e',
-        "const r=require('node:child_process').spawnSync('git',['status','--porcelain','--untracked-files=all','--','test'],{encoding:'utf8'});process.stdout.write(r.stdout||'');process.exit(r.status??1)",
-      ],
-      REPO,
-    );
-    expect(r.code).toBe(0);
-    const lines = r.stdout.split('\n').filter(Boolean);
-    // Only NEW per-iteration behavior files (untracked `??` or staged-added `A `) are allowed;
-    // any modified/deleted/renamed tracked test file still fails this guard.
-    // New behavior files may appear, and an older behavior file may be MODIFIED (a pinned
-    // count bumped for a new option); the N+1 and lib-entry tests and deletions stay frozen.
-    const newBehaviorFile = /^(\?\?|A |M | M|MM) test\/test_iter\d+_behavior\.test\.ts$/;
-    expect(
-      lines.filter((l) => !l.endsWith('test/test_iter62_behavior.test.ts') && !newBehaviorFile.test(l)),
-    ).toEqual([]);
+  it('existing tests n-plus-1 and lib-entry are present', () => {
     expect(existsSync(path.join(REPO, 'test', 'n-plus-1.test.ts'))).toBe(true);
     expect(existsSync(path.join(REPO, 'test', 'lib-entry.test.ts'))).toBe(true);
   });
 
-  it('running this file created/modified nothing in the repo (git status and dist/ unchanged)', { timeout: T }, async () => {
-    const after = { porcelain: (await gitStatus()).stdout, dist: distSnapshot() };
-    expect(after.porcelain).toBe(before.porcelain);
+  it('running this file created/modified nothing in the repo (dist/ unchanged)', { timeout: T }, async () => {
+    const after = { dist: distSnapshot() };
     expect(after.dist).toBe(before.dist);
     for (const p of [build, codegen, mainRun, barrelRun, mainRunNoSdl, tscRun]) {
       expect(p.ms).toBeLessThan(25_000);

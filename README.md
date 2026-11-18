@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1863%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1859%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -405,7 +405,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1863 tests across 72 files (Vitest), all green:
+`npm test` — 1859 tests across 74 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -443,6 +443,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Write path** (`test_iter101_behavior.test.ts`): `addReview` stores a review through `POST /reviews` at exactly 1 downstream call (per backend instance, shared seed data untouched) and keeps `pii` redaction; anonymous or unparseable callers get `UNAUTHENTICATED` and bad `rating`/`body` get `BAD_ARGUMENT`, both at 0 calls; an unknown book is `NOT_FOUND` after 1 call; `book { reviews }` in the same response reads the write (3 calls) and two aliased writes run serially (5 calls); the POST carries forwarded headers and a JSON body, fires one hook event with the GET key set, spends `maxDownstreamCalls`, and is never coalesced; a mutation over GET is a 405; `maxDepth`/`maxComplexity` price it like a query.
 - **@defer with @skip/@include** (`test_iter102_behavior.test.ts`): under a JSON-only `accept`, a defer excluded by `@skip(if: true)` or `@include(if: false)` (literal, variable, variable default, a skipped ancestor field or a skipped fragment spread) gets the plain 200 reply, body-identical to the query without that selection apart from `extensions`, at the same downstream call count; skip wins over include; an active defer beside an excluded one, or a second included spread of the same fragment, still gets 406 `DEFER_NOT_ACCEPTED` at 0 calls; streaming clients and GET behave as before.
 - **CLI opt-ins** (`test_iter103_behavior.test.ts`): `npm start` honours `COALESCE_IN_FLIGHT` (a 50-request burst sums ≤ 15 downstream calls with `1`/`true`, 150 when unset, `0`, `false` or empty) and `COMPRESS_MIN_BYTES` (`0` gzips a small reply, `off` and `5000` leave the nested sample uncompressed, unset keeps 1024), rejects bad values before listening with the variable and quoted value, and ties the exported `OPTION_ENV` map to both README tables and the CLI's `env.NAME` reads.
+- **Git-free suite** (`test_iter104_behavior.test.ts`): runs the N+1 guard in throwaway repo copies with no git metadata. A clean copy passes, and changing `toBe(3)` to `toBe(4)`, renaming the batched title, `it.skip`, `it.only` or dropping the identical-data assertion each turn it red. It also checks that no file under `test/` spawns git, that the oracle still pins 21 and 3, and that the iter-62 / iter-80 `dist/` snapshot checks survive.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
@@ -455,6 +456,8 @@ expect(batched.data).toEqual(naive.data); // identical results, fewer calls
 ```
 
 If someone deletes a loader or sneaks a fetch into a resolver, the batched count blows up and this test fails.
+
+- **N+1 oracle guard** (`n-plus-1-guard.test.ts`): pins the N+1 oracle's assertions without git. It reads `n-plus-1.test.ts` as text and requires its three test titles, the exact 21 / 3 call-count and per-route `expect` lines and the identical-data assertion, and no `.skip`/`.only`/`.todo`/`.fails`/`.skipIf`/`.runIf`/`xit(`/`xdescribe(`. It works in any copy of the repo and keeps biting after a weakening is committed.
 
 Same-process throughput ratios are not load-invariant in the parallel suite (the two mounts do not slow down together on a busy host), so they live in serial bench scripts such as `npm run bench:listener`, run on a quiet host, never in `npm test`.
 

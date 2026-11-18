@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -339,14 +338,6 @@ describe('EB8 - N+1 numbers do not move', () => {
       spy.mockRestore();
       process.exitCode = prev;
     }
-  });
-
-  it('test/n-plus-1.test.ts is unchanged against HEAD', () => {
-    const out = execFileSync('git', ['status', '--porcelain', '--', 'test/n-plus-1.test.ts'], {
-      cwd: REPO,
-      encoding: 'utf8',
-    });
-    expect(out.trim()).toBe('');
   });
 });
 
