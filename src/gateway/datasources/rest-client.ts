@@ -394,8 +394,18 @@ export class InFlightCalls {
   }
 }
 
+/** How one unshared call is sent: GET without a body, or POST with a JSON one. */
+interface Send {
+  method: 'GET' | 'POST';
+  body?: string;
+}
+
+const GET: Send = { method: 'GET' };
+
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
+  /** Set by the first `post`; from then on this request's GETs are never coalesced. */
+  private wrote = false;
   /** Per-request deadline in milliseconds for every downstream call. */
   readonly timeoutMs: number;
   /** Abort callbacks of calls (and shared-call waits) in flight under the edge signal; see `watchEdge`. */
@@ -411,10 +421,10 @@ export class RestClient {
    *   measured number whatever the query shape, batching mode or prefetch path.
    * @param headers Edge headers to send on every call (already allowlisted by
    *   the caller). WHY on the client: every downstream path -- batched, naive,
-   *   list, prefetch -- funnels through `get`, so none can forget them, and the
+   *   list, prefetch, write -- funnels through `get` or `post`, so none can forget them, and the
    *   client is per request, so one caller's credential never reaches another's.
    * @param onCall Operator hook fired once per *sent* call after it settles
-   *   (see {@link DownstreamCallEvent}). WHY here: `get` is the one place every
+   *   (see {@link DownstreamCallEvent}). WHY here: `get`/`post` are the one place every
    *   counted call passes, so once every sent call has settled, events equal
    *   `stats.total` (a call still in flight when the response is sent -- an
    *   orphaned prefetch or an error-orphaned NAIVE sibling -- fires later).
@@ -512,7 +522,9 @@ export class RestClient {
   async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
     this.checkClientPresent(path);
     const reader = read ?? parsedJson;
-    if (this.coalesce) {
+    // After this request wrote, its reads are never answered by a GET another
+    // request started before the write landed (read-your-write).
+    if (this.coalesce && !this.wrote) {
       const url = this.buildUrl(path, params);
       const key = this.coalesceKey(url);
       // A join sends nothing, so it is neither budget-checked, counted nor reported.
@@ -522,15 +534,38 @@ export class RestClient {
       this.track(path);
       return this.sendShared(this.coalesce, key, url, path, reader);
     }
+    return this.sendCounted(path, () => this.buildUrl(path, params), GET, reader);
+  }
+
+  /**
+   * Sends one counted POST of `body` as JSON. WHY it shares `sendCounted`
+   * with `get`: a write must be budgeted, counted, header-forwarded,
+   * hook-reported and edge-cancelled exactly like a read. WHY it never touches
+   * the in-flight registry: a POST is not idempotent, so two identical writes
+   * are two writes, and sharing one would silently drop the other.
+   */
+  async post<T>(path: string, body: unknown, read: (body: unknown) => T): Promise<T> {
+    this.checkClientPresent(path);
+    this.wrote = true;
+    const init: Send = { method: 'POST', body: JSON.stringify(body) };
+    return this.sendCounted(path, () => joinBaseUrl(this.baseUrl, path), init, read);
+  }
+
+  /**
+   * Budget-checks, counts and sends one unshared call, firing the hook once
+   * it settles. `url` is a thunk so an invalid base still fails AFTER
+   * `track`, as a counted, reported call.
+   */
+  private async sendCounted<T>(path: string, url: () => URL, init: Send, read: (body: unknown) => T): Promise<T> {
     this.checkBudget();
     this.track(path);
-    if (!this.onCall) return this.send(path, params, reader);
+    if (!this.onCall) return this.send(path, url, init, read);
 
     const started = performance.now();
     let status: number | null = null;
     let verdict = OK;
     try {
-      return await this.send(path, params, reader, (arrived) => (status = arrived));
+      return await this.send(path, url, init, read, (arrived) => (status = arrived));
     } catch (err: unknown) {
       verdict = classify(err);
       throw err;
@@ -613,14 +648,15 @@ export class RestClient {
    */
   private async send<T>(
     path: string,
-    params: QueryParams | undefined,
+    url: () => URL,
+    init: Send,
     read: (body: unknown) => T,
     onStatus?: (status: number) => void,
   ): Promise<T> {
-    const url = this.buildUrl(path, params);
+    const target = url();
     const { signal, release } = this.callSignal();
     try {
-      const { status, text } = await this.fetchText(url, path, signal, this.signal, onStatus);
+      const { status, text } = await this.fetchText(target, path, signal, this.signal, onStatus, init);
       return readBody(path, status, text, read);
     } finally {
       release();
@@ -640,10 +676,11 @@ export class RestClient {
     signal: AbortSignal,
     cancelled: AbortSignal | undefined,
     onStatus?: (status: number) => void,
+    init: Send = GET,
   ): Promise<SharedBody> {
     let res: Response;
     try {
-      res = await fetch(url, { headers: this.headers, signal });
+      res = await fetch(url, { ...this.request(init), signal });
     } catch (err: unknown) {
       throw fetchFailure(path, this.timeoutMs, err, cancelled);
     }
@@ -655,6 +692,15 @@ export class RestClient {
       });
     }
     return { status: res.status, text: await bodyText(path, this.timeoutMs, res, cancelled) };
+  }
+
+  /**
+   * Method, headers and body for `fetch`. A JSON body's `content-type` is set
+   * last so an allowlisted edge `content-type` can never mislabel it.
+   */
+  private request(init: Send): RequestInit {
+    if (init.body === undefined) return { method: init.method, headers: this.headers };
+    return { method: init.method, headers: { ...this.headers, 'content-type': 'application/json' }, body: init.body };
   }
 
   resetStats(): void {

@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
 import type { Resolvers } from '../generated/graphql.js';
+import { requireAuth } from './context.js';
 import { willResolveChild } from './lookahead.js';
 import { MAX_PAGE_SIZE } from './pagination/page-size.js';
 
@@ -78,6 +79,11 @@ export const resolvers: Resolvers = {
         return book;
       });
     },
+  },
+
+  Mutation: {
+    // Auth first, then validation (in the service), then the single POST.
+    addReview: (_parent, args, ctx) => ctx.services.review.addReview(requireAuth(ctx).userId, args),
   },
 
   Author: {

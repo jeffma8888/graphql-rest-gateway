@@ -388,7 +388,9 @@ describe('EB8 requireAuth prose matches the code', () => {
     expect(auth).toContain('UNAUTHENTICATED');
   });
 
-  it('no requireAuth sentence says "is provided"; it says internal + no shipped field', () => {
+  // Re-pinned iter-101: `addReview` is now the shipped user of requireAuth, so
+  // the sentence names it instead of saying "no shipped field" uses it.
+  it('no requireAuth sentence says "is provided"; it says internal + names its shipped user', () => {
     const hits = sentences(README).filter((s) => s.includes('requireAuth'));
     expect(hits.length).toBeGreaterThan(0);
     for (const s of hits) expect(s).not.toContain('is provided');
@@ -396,7 +398,8 @@ describe('EB8 requireAuth prose matches the code', () => {
     expect(auth.length).toBeGreaterThan(0);
     for (const s of auth) {
       expect(s).toContain('internal');
-      expect(s).toContain('no shipped field');
+      expect(s).toContain('addReview');
+      expect(s).not.toContain('no shipped field');
     }
   });
 

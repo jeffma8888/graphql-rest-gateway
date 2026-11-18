@@ -91,12 +91,19 @@ function checkField(row: JsonObject, key: string, kind: FieldKind, label: string
  */
 export function readRows<R>(body: unknown, spec: RowSpec<R>, show: Describe, label = 'row'): R[] {
   if (!Array.isArray(body)) throw new ContractMismatch(`expected a JSON array of rows, got ${show(body)}`);
-  const fields = Object.entries(spec) as Array<[string, FieldKind]>;
-  body.forEach((row: unknown, i) => {
-    if (!isRecord(row)) throw new ContractMismatch(`${label} ${i}: expected an object, got ${show(row)}`);
-    for (const [key, kind] of fields) checkField(row, key, kind, `${label} ${i}`, show);
-  });
+  body.forEach((row: unknown, i) => checkRow(row, spec, show, `${label} ${i}`));
   return body as R[];
+}
+
+/** Validates ONE row object (a create route's reply) and returns it typed. */
+export function readRow<R>(body: unknown, spec: RowSpec<R>, show: Describe, label = 'row'): R {
+  checkRow(body, spec, show, label);
+  return body as R;
+}
+
+function checkRow<R>(row: unknown, spec: RowSpec<R>, show: Describe, label: string): void {
+  if (!isRecord(row)) throw new ContractMismatch(`${label}: expected an object, got ${show(row)}`);
+  for (const [key, kind] of Object.entries(spec) as Array<[string, FieldKind]>) checkField(row, key, kind, label, show);
 }
 
 /** `GET /authors` must be `{ items: AuthorRow[], total: number }`; an empty page is valid. */

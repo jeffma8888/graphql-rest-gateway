@@ -9,11 +9,13 @@ import {
   type AuthorPage,
 } from './contract.js';
 import type { RestClient } from './rest-client.js';
+import { ReviewWriteDataSource } from './writes.js';
 
 export type { AuthorPage } from './contract.js';
 
 /**
- * REST data sources -- the ONLY layer that knows the downstream URL shapes.
+ * REST data sources -- the ONLY layer that knows the downstream URL shapes
+ * (the read routes here, the write routes in `./writes`).
  * Resolvers and services never touch fetch/URLs; they go through here. Every
  * 2xx body is checked against the shared contract (`./contract`) before it is
  * returned, so a contract-breaking backend fails as `DOWNSTREAM_BAD_RESPONSE`.
@@ -60,6 +62,8 @@ export interface DataSources {
   author: AuthorDataSource;
   book: BookDataSource;
   review: ReviewDataSource;
+  /** Writes live in `./writes` so `check-backend` never probes them. */
+  reviewWrite: ReviewWriteDataSource;
 }
 
 export function buildDataSources(client: RestClient): DataSources {
@@ -67,5 +71,6 @@ export function buildDataSources(client: RestClient): DataSources {
     author: new AuthorDataSource(client),
     book: new BookDataSource(client),
     review: new ReviewDataSource(client),
+    reviewWrite: new ReviewWriteDataSource(client),
   };
 }

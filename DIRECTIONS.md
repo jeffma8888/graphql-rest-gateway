@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-101
+    lenses: unknown
+    - Candidate A1 -- README §8 Testing stopped at iter-97: the last 3 shipped features have no test bullet, and 31 of 69 test files are named nowhere in §8. Backfill the bullets and add a guard that every test file is named
+    - Candidate A2 -- §6 says a shared loader would "leak one user's data into another user's response", and nothing explains why opt-in `coalesceInFlight` (cross-request sharing) does not. Write the decision into §6/§9, correct §10's cache bullet, and add a doc-test for the mixed-auth case
+    - Candidate A3 -- Nothing runs the README Programmatic-usage snippet, and PRODUCT row 46 still says it "hangs >30 s today". Add a doc-test that executes the block as written, and correct the stale roadmap rows (46, 55)
+    - Candidate B1 -- The gateway's first write path: `Mutation.addReview(bookId: ID!, rating: Int!, body: String!): Review!` proxied to `POST /reviews`, with the request's reviews-by-book key cleared so the same response shows the write
+    - Candidate B2 -- HTTP-cacheable GET reads: SDL `@cacheControl(maxAge: Int)` hints give GET query replies `cache-control: public, max-age=N` (the minimum over the resolved fields), `private` when the request carries `authorization`, and no header otherwise
+    - Candidate B3 -- Nested Relay pagination: `Author.booksConnection(first: Int, after: String): BookConnection!` pages an author's books with cursors, sliced from the one batched `/books/by-author` fetch (0 extra calls)
+    winner: B1
+    ship: pending (not yet decided)
   iter-100
     lenses: performance-and-throughput
     - Candidate A1 -- Brotli at a pinned quality: `accept-encoding: br` makes SAMPLE 599 → 478 B (-20 %) and a 60-root reply 706 → 504 B (-29 %) at about the same CPU as gzip
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2: README §6 Architecture covers only the resolve half. Nine modules every request passes through are named nowhere in the README. Add the edge pipeline and guard that every gateway module is named
     - Candidate B3: The compression decisions are recorded only in the foundry log. README §9 should say why `br` is not offered and why SSE goes out with `content-encoding: none`, with a doc-test that keeps the second claim true
     winner: A2
-    ship: pending (not yet decided)
+    ship: PUSHED a968d68
   iter-99
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- One positive-integer rule: `maxBatchSize` goes through options.ts `assertPositiveInt`, server.ts's private `validateMaxBatchSize` is deleted, and so is the uncalled `RestClient.resetStats()` (row 60, batch half)
@@ -671,4 +681,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-67 scouted iterations
+68 scouted iterations

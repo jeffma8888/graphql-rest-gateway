@@ -1,5 +1,11 @@
 import { GraphQLError } from 'graphql';
-import type { AuthorBooksArgs, BookOrder, BookReviewsArgs, ReviewOrder } from '../generated/graphql.js';
+import type {
+  AuthorBooksArgs,
+  BookOrder,
+  BookReviewsArgs,
+  MutationAddReviewArgs,
+  ReviewOrder,
+} from '../generated/graphql.js';
 import type { AuthorRow, BookRow, ReviewRow } from '../rest-backend/data.js';
 import type { AuthorPage, DataSources } from './datasources/index.js';
 import type { Loaders } from './loaders.js';
@@ -93,8 +99,9 @@ export class AuthorService {
    * before it settles so concurrent ops share the in-flight call, and a
    * rejection is kept so a failing page is called once, not retried per op.
    * `null` when the loaders run without a cache (NAIVE): no dedupe at all.
-   * Safe only because the graph is read-only (no `Mutation` type): a future
-   * write path must clear `pages`, or later ops in a batch see stale pages.
+   * Safe only because no write path changes authors (`addReview` writes
+   * reviews only): a future author write must clear `pages`, or later ops in
+   * a batch see stale pages.
    */
   private readonly pages: Map<string, Promise<AuthorPage>> | null;
 
@@ -221,11 +228,62 @@ export class BookService {
   }
 }
 
+/** Longest accepted review `body`, in UTF-16 code units (`String.length`). */
+export const MAX_REVIEW_BODY = 2000;
+
+function badArgument(argument: string, message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: 'BAD_ARGUMENT', argument } });
+}
+
+/**
+ * Refuses an `addReview` the backend would reject, BEFORE any downstream
+ * call. WHY in the gateway too: a typed `BAD_ARGUMENT` at 0 calls beats a
+ * spent call answered by an opaque downstream 400. `Int!` already rules out
+ * non-integers, so only the range is left to check.
+ */
+function validateNewReview(args: MutationAddReviewArgs): void {
+  if (args.rating < 1 || args.rating > 5) {
+    throw badArgument('rating', `Argument \`rating\` must be an integer from 1 to 5; received ${args.rating}.`);
+  }
+  if (args.body.trim().length === 0) {
+    throw badArgument('body', 'Argument `body` must not be empty.');
+  }
+  if (args.body.length > MAX_REVIEW_BODY) {
+    throw badArgument('body', `Argument \`body\` accepts at most ${MAX_REVIEW_BODY} characters; received ${args.body.length}.`);
+  }
+}
+
+/** True for the downstream 404 the create route answers for an unknown book. */
+function isDownstreamNotFound(err: unknown): boolean {
+  return err instanceof GraphQLError && err.extensions.code === 'DOWNSTREAM_ERROR' && err.extensions.status === 404;
+}
+
 export class ReviewService {
   constructor(
+    private readonly ds: DataSources,
     private readonly loaders: Loaders,
     private readonly prefetch: boolean,
   ) {}
+
+  /**
+   * Validates, then sends the one `POST /reviews` (as `reviewer`, the
+   * authenticated caller). On success the book's `reviewsByBookId` key is
+   * cleared, so a later `Book.reviews` in this response re-reads and sees the
+   * new review (read-your-write); a rejected write leaves the cache as it was.
+   */
+  async addReview(reviewer: string, args: MutationAddReviewArgs): Promise<ReviewRow> {
+    validateNewReview(args);
+    const { bookId, rating, body } = args;
+    let row: ReviewRow;
+    try {
+      row = await this.ds.reviewWrite.addReview({ bookId, rating, body, reviewer });
+    } catch (err: unknown) {
+      if (!isDownstreamNotFound(err)) throw err;
+      throw new GraphQLError(`Book ${bookId} not found`, { extensions: { code: 'NOT_FOUND', id: bookId } });
+    }
+    this.loaders.reviewsByBookId.clear(bookId);
+    return row;
+  }
 
   /** Same contract as `BookService.prefetchBooksForAuthor`, for `Book.reviews`. */
   prefetchReviewsForBook(bookId: string): void {
@@ -263,6 +321,6 @@ export function buildServices(ds: DataSources, loaders: Loaders, prefetch: boole
   return {
     author: new AuthorService(ds, loaders, prefetch),
     book: new BookService(loaders, prefetch),
-    review: new ReviewService(loaders, prefetch),
+    review: new ReviewService(ds, loaders, prefetch),
   };
 }

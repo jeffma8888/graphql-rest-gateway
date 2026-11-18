@@ -83,6 +83,28 @@ export type BookOrder =
   /** Newest first (publication year descending): `books(first: 1, orderBy: YEAR_DESC)` is the latest book. */
   | 'YEAR_DESC';
 
+/** The write path. Root fields of a mutation run one after another, in document order. */
+export type Mutation = {
+  /**
+   * Adds a review to the book `bookId` and returns the stored review. Requires an
+   * authenticated caller (a missing or unparseable bearer token is UNAUTHENTICATED);
+   * the caller's user id becomes the reviewer. `rating` must be an integer in 1..5 and
+   * `body` non-empty after trimming, at most 2000 characters; otherwise BAD_ARGUMENT.
+   * Both checks run before any downstream call. Costs exactly 1 downstream call
+   * (`POST /reviews`), never shared with another request's identical write; an unknown
+   * book is NOT_FOUND. Afterwards, `Book.reviews` in the same response includes it.
+   */
+  addReview: Review;
+};
+
+
+/** The write path. Root fields of a mutation run one after another, in document order. */
+export type MutationAddReviewArgs = {
+  body: Scalars['String']['input'];
+  bookId: Scalars['ID']['input'];
+  rating: Scalars['Int']['input'];
+};
+
 export type PageInfo = {
   /** Cursor of the last edge on this page; pass as `after` to read the next page. */
   endCursor?: Maybe<Scalars['String']['output']>;
@@ -243,6 +265,7 @@ export type ResolversTypes = ResolversObject<{
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
+  Mutation: ResolverTypeWrapper<{}>;
   PageInfo: ResolverTypeWrapper<PageInfo>;
   Query: ResolverTypeWrapper<{}>;
   Review: ResolverTypeWrapper<ReviewRow>;
@@ -259,6 +282,7 @@ export type ResolversParentTypes = ResolversObject<{
   Boolean: Scalars['Boolean']['output'];
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
+  Mutation: {};
   PageInfo: PageInfo;
   Query: {};
   Review: ReviewRow;
@@ -302,6 +326,10 @@ export type BookResolvers<ContextType = GatewayContext, ParentType extends Resol
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type MutationResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
+  addReview?: Resolver<ResolversTypes['Review'], ParentType, ContextType, RequireFields<MutationAddReviewArgs, 'body' | 'bookId' | 'rating'>>;
+}>;
+
 export type PageInfoResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['PageInfo'] = ResolversParentTypes['PageInfo']> = ResolversObject<{
   endCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hasNextPage?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -331,6 +359,7 @@ export type Resolvers<ContextType = GatewayContext> = ResolversObject<{
   AuthorConnection?: AuthorConnectionResolvers<ContextType>;
   AuthorEdge?: AuthorEdgeResolvers<ContextType>;
   Book?: BookResolvers<ContextType>;
+  Mutation?: MutationResolvers<ContextType>;
   PageInfo?: PageInfoResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   Review?: ReviewResolvers<ContextType>;

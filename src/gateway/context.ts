@@ -93,10 +93,17 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
   return { auth, services, loaders, datasources, restClient };
 }
 
-/** Guard helper for resolvers that require an authenticated caller. */
-export function requireAuth(ctx: GatewayContext): AuthContext {
+/** An authenticated caller: `requireAuth` narrows `userId` to a string. */
+export type AuthenticatedContext = AuthContext & { userId: string };
+
+/**
+ * Guard helper for resolvers that require an authenticated caller (today
+ * `Mutation.addReview`). Call it FIRST, before argument checks or loads, so an
+ * anonymous request learns nothing else and costs 0 downstream calls.
+ */
+export function requireAuth(ctx: GatewayContext): AuthenticatedContext {
   if (!ctx.auth.userId) {
     throw new GraphQLError('Unauthenticated', { extensions: { code: 'UNAUTHENTICATED' } });
   }
-  return ctx.auth;
+  return { ...ctx.auth, userId: ctx.auth.userId };
 }

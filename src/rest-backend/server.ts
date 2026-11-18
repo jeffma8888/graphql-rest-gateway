@@ -47,6 +47,8 @@ export function buildBackend(opts: BackendOptions = {}): {
     if (list) list.push(b);
     else booksByAuthorId.set(b.authorId, [b]);
   }
+  // Per-instance lists: `POST /reviews` appends here, so a write is visible to
+  // this backend only and never mutates the shared, exported REVIEWS seed.
   const reviewsByBookId = new Map<string, ReviewRow[]>();
   for (const r of REVIEWS) {
     const list = reviewsByBookId.get(r.bookId);
@@ -132,5 +134,34 @@ export function buildBackend(opts: BackendOptions = {}): {
     return result;
   });
 
+  // Create: POST /reviews { bookId, rating, body, reviewer } -> 201 ReviewRow.
+  // 400 for an off-contract body, 404 for an unknown book. The id is
+  // `<bookId>-r<n>`, n being the book's review count after the append.
+  app.post('/reviews', async (req, reply) => {
+    const input = readNewReview(req.body);
+    if (!input) return reply.code(400).send({ error: 'invalid review' });
+    if (!bookById.has(input.bookId)) return reply.code(404).send({ error: 'book not found' });
+    const list = reviewsByBookId.get(input.bookId) ?? [];
+    const row: ReviewRow = { id: `${input.bookId}-r${list.length + 1}`, ...input };
+    reviewsByBookId.set(input.bookId, [...list, row]);
+    return reply.code(201).send(row);
+  });
+
   return { app, stats };
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * The `POST /reviews` body, or null when it breaks the contract: `rating` an
+ * integer 1..5, and `bookId`, `body` and `reviewer` non-empty strings. WHY the
+ * backend re-checks what the gateway already validated: it is the system of
+ * record, and other (legacy) clients write to it without the gateway.
+ */
+function readNewReview(raw: unknown): Omit<ReviewRow, 'id'> | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { bookId, rating, body, reviewer } = raw as Record<string, unknown>;
+  if (!nonEmpty(bookId) || !nonEmpty(body) || !nonEmpty(reviewer)) return null;
+  if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) return null;
+  return { bookId, rating, body, reviewer };
 }
