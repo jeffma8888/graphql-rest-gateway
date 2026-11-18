@@ -4,6 +4,8 @@ import {
   getOperationAST,
   getVariableValues,
   GraphQLError,
+  GraphQLIncludeDirective,
+  GraphQLSkipDirective,
   Kind,
   visit,
   type DirectiveNode,
@@ -67,11 +69,36 @@ function documentMentionsDefer(doc: DocumentNode): boolean {
 }
 
 /**
+ * Whether `@skip`/`@include` keep the executor from running this selection.
+ * WHY mirror graphql-js's `shouldIncludeNode`: the guard must treat as
+ * inactive exactly the defers the executor would never reach.
+ */
+function excluded(node: { readonly directives?: readonly DirectiveNode[] }, variables: Record<string, unknown>): boolean {
+  try {
+    if (getDirectiveValues(GraphQLSkipDirective, node, variables)?.['if'] === true) return true;
+    return getDirectiveValues(GraphQLIncludeDirective, node, variables)?.['if'] === false;
+  } catch (error) {
+    // `if: $v` with `$v` explicitly null: the executor errors this selection's
+    // parent selection set before reaching it, so nothing under it runs.
+    if (error instanceof GraphQLError) return true;
+    throw error;
+  }
+}
+
+/**
  * Whether the executed operation has at least one `@defer` that is active for
  * these variables. WHY evaluate `if` (literal or variable) per request: an
  * inactive defer executes as a plain reply, which a JSON client can take, so
- * refusing it would break `@defer(if: $streaming)` clients. Fragment spreads
- * are followed once each, so a shared fragment is not re-walked.
+ * refusing it would break `@defer(if: $streaming)` clients. For the same
+ * reason a field, inline fragment or spread that `@skip(if: true)` or
+ * `@include(if: false)` excludes is not walked at all (skip wins, as in the
+ * executor), so `... @defer @include(if: $streaming)` with `$streaming` false
+ * is a plain reply too. A selection whose `if` cannot be evaluated (`$v`
+ * explicitly null) is treated the same way, per node: the executor errors its
+ * parent selection set before reaching it, while a decidable active defer
+ * elsewhere is still refused. Fragment spreads are followed once each, so a shared
+ * fragment is not re-walked; an excluded spread does not mark its fragment
+ * seen, so a second, included spread of it is still checked.
  */
 function hasActiveDefer(
   directive: GraphQLDirective,
@@ -80,9 +107,18 @@ function hasActiveDefer(
   variables: Record<string, unknown>,
   seen: Set<string>,
 ): boolean {
-  const active = (node: { readonly directives?: readonly DirectiveNode[] }): boolean =>
-    getDirectiveValues(directive, node, variables)?.['if'] === true;
+  const active = (node: { readonly directives?: readonly DirectiveNode[] }): boolean | undefined => {
+    try {
+      return getDirectiveValues(directive, node, variables)?.['if'] === true;
+    } catch (error) {
+      if (error instanceof GraphQLError) return undefined;
+      throw error;
+    }
+  };
   for (const selection of selectionSet.selections) {
+    if (excluded(selection, variables)) continue;
+    // An undecidable `@defer(if: $v)` is skipped like an excluded selection.
+    if (selection.kind !== Kind.FIELD && active(selection) === undefined) continue;
     if (selection.kind === Kind.FIELD) {
       if (selection.selectionSet && hasActiveDefer(directive, selection.selectionSet, fragments, variables, seen)) {
         return true;

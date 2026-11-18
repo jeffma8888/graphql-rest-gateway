@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-102
+    lenses: new-capability, hardening/DX
+    - Candidate A1 -- Second write verb: `Mutation.deleteReview(id: ID!): Review!` → bundled `DELETE /reviews/:id` at 1 call, auth-gated, read-your-write (row 107)
+    - Candidate A2 -- HTTP-cacheable GET reads: SDL `@cacheControl(maxAge: Int)` hints → `cache-control` on GraphQL GET replies (row 105)
+    - Candidate A3 -- Filtered nested reviews: `Book.reviews(minRating: Int)` keeps rating ≥ N after the one batched fetch, before `orderBy`/`first`
+    - Candidate B1 -- Write-path input parity: `addReview` refuses unsendable ids and blank callers at 0 calls, as reads already do (REV iter-101 NITs 1-2)
+    - Candidate B2 -- The `@defer` accept guard refuses only defers the executor will run: it honours `@skip`/`@include` (row 95)
+    - Candidate B3 -- Options are fixed at boot: `createGateway` snapshots `opts`, so mutating the caller's object cannot 500 every request, bring back N+1, or re-point traffic (row 50, snapshot half)
+    winner: B2
+    ship: pending (not yet decided)
   iter-101
     lenses: unknown
     - Candidate A1 -- README §8 Testing stopped at iter-97: the last 3 shipped features have no test bullet, and 31 of 69 test files are named nowhere in §8. Backfill the bullets and add a guard that every test file is named
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- HTTP-cacheable GET reads: SDL `@cacheControl(maxAge: Int)` hints give GET query replies `cache-control: public, max-age=N` (the minimum over the resolved fields), `private` when the request carries `authorization`, and no header otherwise
     - Candidate B3 -- Nested Relay pagination: `Author.booksConnection(first: Int, after: String): BookConnection!` pages an author's books with cursors, sliced from the one batched `/books/by-author` fetch (0 extra calls)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED a3fb371
   iter-100
     lenses: performance-and-throughput
     - Candidate A1 -- Brotli at a pinned quality: `accept-encoding: br` makes SAMPLE 599 → 478 B (-20 %) and a 60-root reply 706 → 504 B (-29 %) at about the same CPU as gzip
@@ -681,4 +691,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-68 scouted iterations
+69 scouted iterations
