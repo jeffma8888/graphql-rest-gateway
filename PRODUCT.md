@@ -56,7 +56,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 34 | Relay backward pagination on `Query.authors` (`last`/`before`; 1 call with `before`, ≤2 without) + pages truncated to the clamped size (`first: 0` → empty) | done | 71 |
 | 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
-| 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s) | planned | — |
+| 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s; iter-106 scout A3: 50 × `book(id){id}`×220 = 6.0 s, re-measure after row 118) | planned | — |
 | 38 | `createGateway` validates its whole options object: NaN/0/Infinity limits, `downstreamTimeoutMs` > 2^31-1, bad `restBaseUrl`/`loaderOptions` and unknown keys (did-you-mean) throw | done | 72 |
 | 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS) | planned | — |
 | 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
@@ -99,7 +99,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 77 | One git-free content guard `test/n-plus-1-guard.test.ts` pins the N+1 oracle (titles, 3/21, per-path counts, no `.skip`); every `git`-spawning test removed so the suite passes outside a git checkout (16 red in a `git archive` export) | done | 104 |
 | 78 | CLI hygiene (iter-80 REV/TEST): rename pure `rejectArguments` → `unsupportedArgumentMessage` (it returns a string, the caller rejects); pin the argv-before-env order (`MAX_DEPTH=x … --help` exits 2, not 1; REV-probed, untested) | planned | — |
 | 79 | Cost-model truth: README §7/§9 + complexity.ts doc drop "conservative upper bound"; it bounds work only when every list has `first`/`last` (`author(id){books{id}}` priced 8 for 150 rows; `authors{…}` 4 vs `first:10` 31, same data) | done | 82 |
-| 80 | README §10 OpenTelemetry bullet names the shipped `onDownstreamCall` seam, not the bundled backend's `/__stats` counter (iter-82 scout B3) | planned | — |
+| 80 | README §10 re-told (unedited since iter-35): OTel bullet names `onDownstreamCall`, not `/__stats`; cache bullet says shipped `downstreamCacheTtlMs`, next = cross-replica store; backtick-identifier guard (iter-82 B3, iter-106 B1) | planned | — |
 | 81 | Bulk lookup `Query.books(ids: [ID!]!): [Book]!`: order kept, `null` + per-item NOT_FOUND, max 100 ids (`BAD_ARGUMENT`, 0 calls), priced `1 + n × subtree`; 15 ids = 1 call (NAIVE 15). Bulk half of row 49 without its global-id question | done | 83 |
 | 82 | HOTFIX (e651602 post-release BROKEN): hop/latency tests assert the FASTEST of ≥5 samples (test_iter68: of 3), not the median; thresholds + call counts byte-identical (load 29-63 redded medians) | done | 84 |
 | 83 | By-id keys the REST list syntax cannot carry (contain `,`, empty, padded, > `MAX_ID_LENGTH` 256) never reach a URL: `NOT_FOUND` at 0 calls on all 4 loaders. Was: `book(id:"a1-b1,…")` sent 150 ids past row 81's cap; one 20k id 431'd its honest batch siblings | done | 85 |
@@ -137,3 +137,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 115 | One codegen-drift guard replaces the 4 sandbox codegen re-runs in test_iter62/71/78/83 (iter-104 scout B3) | planned | — |
 | 116 | Delete the hand-kept README test-count/coverage figures (2 badges, §8 literals; coverage claims ~86 % lines vs measured 97.7 %) and the 19 `it`s pinning them (iter-105 scout A1) | planned | — |
 | 117 | `npm start` mounts `gateway.nodeListener`; drop the CLI's duplicate drain listener, `FLUSH_TIMEOUT_MS` and second deadline (iter-105 scout A3) | planned | — |
+| 118 | Repeated-selection cap: >32 field selections merging into one response position → `QUERY_TOO_REPETITIVE` at 0 calls, before graphql-js's quadratic overlap rule (`book(id){id}`×220: 146 ms validate → refused; worst admitted ~13 ms); exported `MAX_MERGED_SELECTIONS` (iter-106 scout A1) | done | 106 |
+| 119 | Order-insensitive downstream key: sort id-list params so TTL cache + coalescing hit on reordered ids (`YEAR_ASC`→`YEAR_DESC` 1 call → 0) (iter-106 scout A2) | planned | — |
+| 120 | README §6: `rest-client.ts` "one HTTP call per invocation" is false under coalescing/TTL (30 invocations → 3 calls); name both cross-request layers + `writes.ts`, behaviour-pinned (iter-106 scout B2) | planned | — |
+| 121 | README §9 records post-iter-82 decisions (coalescing, TTL cache, no `br`, `@defer` 406, POST never coalesced); guard: every opt-in option named in §9 (iter-106 scout B3) | planned | — |

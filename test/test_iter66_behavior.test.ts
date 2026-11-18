@@ -34,8 +34,13 @@ const TOO_LARGE = 'QUERY_TOO_LARGE';
 const TOO_COMPLEX = 'QUERY_TOO_COMPLEX';
 const TOO_DEEP = 'QUERY_TOO_DEEP';
 
-/** Exactly 2000 tokens: `{` + 1998 names + `}`. */
-const DOC_2000 = '{ ' + '__typename '.repeat(1998) + '}';
+/**
+ * Exactly 2000 tokens with distinct response keys (iter-106 re-pin: 1998 bare
+ * `__typename`s now merge into one position and are QUERY_TOO_REPETITIVE):
+ * `query Q {` (3) + `__typename` (1) + 665 x `aN: __typename` (3 each) + `}`.
+ */
+const DOC_2000 =
+  'query Q { __typename ' + Array.from({ length: 665 }, (_, i) => `a${i}: __typename `).join('') + '}';
 /** 2001 tokens. */
 const DOC_2001 = '{ ' + '__typename '.repeat(1999) + '}';
 const repeatName = (n: number): string => `{ author(id:"a1"){ id ${'name '.repeat(n)}} }`;

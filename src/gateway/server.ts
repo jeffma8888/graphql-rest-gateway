@@ -23,6 +23,7 @@ import {
 } from './security/complexity.js';
 import { getValidationResult, buildFragmentMap } from './security/validation-cache.js';
 import { parseWithTokenLimit } from './security/token-limit.js';
+import { mergedSelectionErrors } from './security/merged-selections.js';
 import { validateGatewayOptions } from './options.js';
 import { deferAcceptPlugin } from './defer.js';
 import { compressionPlugin } from './compression.js';
@@ -137,8 +138,10 @@ function validateMaxBatchSize(value: number | undefined): void {
 /**
  * Edge admission control, cheapest check first. WHY this order: the token
  * cap bounds the document at parse time, then the gateway's own linear
- * depth/complexity rules run on their own, and only a document within those
- * limits reaches graphql-js's specified rules (some of which are quadratic).
+ * depth/complexity rules run on their own, then (only when they pass) the
+ * linear merged-selection cap, and only a document within all of those
+ * reaches graphql-js's specified rules (some of which are quadratic in
+ * repeated fields, which is what the merged-selection cap bounds).
  * A limit rejection is returned alone, so a hostile document never pays for,
  * or reports, spec-rule validation. Those rules also fill the shared
  * validation cache that `queryComplexityPlugin` reads, so they are not added
@@ -161,6 +164,7 @@ function securityPlugin(maxDepth: number, maxComplexity: number): Plugin {
           depthLimit(maxDepth),
           complexityLimit(maxComplexity),
         ]);
+        if (errors.length === 0) errors = mergedSelectionErrors(params.documentAST);
         limitErrors.set(params.documentAST, errors);
       }
       if (errors.length > 0) setResult(errors);

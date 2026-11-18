@@ -398,7 +398,7 @@ describe('EB9 - unchanged surfaces', () => {
   // export); the runtime export list below is still pinned.
   it('the src/lib.ts export list is unchanged', () => {
     const keys = Object.keys(lib).sort();
-    expect(keys).toEqual(['BATCHED', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema']);
+    expect(keys).toEqual(['BATCHED', 'MAX_MERGED_SELECTIONS', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema']);
   });
 });
 

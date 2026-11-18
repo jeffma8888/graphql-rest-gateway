@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-106
+    lenses: performance-and-throughput, narrative-and-docs
+    - A1 -- Admission refuses repeated same-response-name selections before graphql-js's quadratic overlap rule, so a 2.2 KB request costs about 0.5 ms instead of 130 ms and that shape's throughput goes from 11 to over 1 000 req/s
+    - A2 -- Canonical downstream key: sort and dedupe the id-list query params before building the URL, so a reordered read hits the shared TTL cache and coalesces (1 call / 16 ms → 0 calls / 1.3 ms)
+    - A3 -- Row 37, re-scoped: charge spec-validation work per edge HTTP request under `maxBatchSize`, so one batched POST cannot hold the event loop for seconds (50 docs: 6.0 s → about 0.3 s)
+    - Candidate B1 -- README §10 "What I'd do next" presents two shipped features as future work: the shared entity cache (iter-105 `downstreamCacheTtlMs`) and the per-call tracing seam (`onDownstreamCall`, still mis-named as `/__stats`). Re-tell §10 and guard every seam it names
+    - Candidate B2 -- README §6 Architecture says `rest-client.ts` makes "one HTTP call per invocation", but since iter-100/105 one invocation can make 0 calls (a coalesced join or a TTL hit). Redraw the bottom of the map with the two cross-request layers, and pin that sentence to behaviour
+    - Candidate B3 -- README §9 Design decisions stops at iter-82. None of the cross-request trade-offs shipped since (in-flight coalescing, the shared TTL cache, compression without `br`, the `@defer` 406 instead of buffering, never coalescing a POST) is recorded as a decision. Add them, with a guard that every opt-in option has a §9 entry
+    winner: A1
+    ship: pending (not yet decided)
   iter-105
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- Delete the hand-maintained README test-count and coverage figures (2 badges, the §8 "N tests across M files" literal, the §8 coverage line) and the 19 `it`s in 14 files that pin them, one of which forbids fixing a figure that is 11 pp stale
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One batched POST cannot freeze the event loop: token budget per edge HTTP request under `maxBatchSize` (row 37), a 200-doc cap-sized batch answers in about 150 ms (at most 4 docs validated, about 34 ms each) instead of stalling every caller for 6.8 s
     - Candidate B3 -- Brotli at a pinned quality 5 for clients that accept it (row 101): SAMPLE goes over the wire as 403 B instead of 488 B (−17 %) for about 8 µs more CPU
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 2190630
   iter-104
     lenses: integration-and-adoption), simplification-and-deletion
     - Candidate A1 -- The `npm start` boot log names the effective configuration, so an operator can see that `COALESCE_IN_FLIGHT=1` took effect, and it never prints REST_BASE_URL credentials
@@ -721,4 +731,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-72 scouted iterations
+73 scouted iterations

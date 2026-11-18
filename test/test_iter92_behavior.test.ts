@@ -329,7 +329,7 @@ describe('EB8: unchanged surfaces', () => {
   it('lib runtime keys are exactly the pinned set', async () => {
     const lib = await import('../src/lib');
     expect(Object.keys(lib).sort()).toEqual(
-      ['BATCHED', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema'].sort(),
+      ['BATCHED', 'MAX_MERGED_SELECTIONS', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema'].sort(),
     );
   });
 

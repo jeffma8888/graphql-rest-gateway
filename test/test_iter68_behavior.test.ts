@@ -506,7 +506,7 @@ describe('EB10 - static guard: one walker', () => {
 
   it('src/lib.ts export list is unchanged', () => {
     expect(Object.keys(lib).sort()).toEqual(
-      ['BATCHED', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema'].sort(),
+      ['BATCHED', 'MAX_MERGED_SELECTIONS', 'NAIVE', 'buildBackend', 'createContext', 'createGateway', 'parseAuth', 'schema'].sort(),
     );
   });
 });

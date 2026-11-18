@@ -482,6 +482,7 @@ describe('EB11 - frozen surface', () => {
     const lib = await import('../src/lib');
     expect(Object.keys(lib).sort()).toEqual([
       'BATCHED',
+      'MAX_MERGED_SELECTIONS',
       'NAIVE',
       'buildBackend',
       'createContext',
