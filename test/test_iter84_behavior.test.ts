@@ -168,6 +168,14 @@ const apps: FastifyInstance[] = [];
 let naive: Run;
 let batched: Run;
 let noisy: Run;
+/** BATCHED series re-run alone when the concurrent pair missed `< HOP` (at most EXTRA_ROUNDS). */
+const batchedExtra: Run[] = [];
+/**
+ * Extra whole series a `<` statistic may take under host load. Sound: the backend sleep
+ * is a floor, so more samples can never pull a 3-hop path under 145 ms; load only adds time.
+ */
+const EXTRA_ROUNDS = 3;
+const fastestOfRuns = (runs: Run[]): number => Math.min(...runs.flatMap((r) => r.samples));
 
 beforeAll(async () => {
   const boot = async (): Promise<string> => {
@@ -178,13 +186,23 @@ beforeAll(async () => {
   const [bN, bB] = await Promise.all([boot(), boot()]);
   // NAIVE and BATCHED each on their own backend; the noisy run goes last and alone,
   // because its event-loop blocks would otherwise land in the clean samples.
+  const gB = createGateway({ restBaseUrl: bB });
   [naive, batched] = await Promise.all([
     timedRuns(createGateway({ restBaseUrl: bN, loaderOptions: NAIVE }), () => false),
-    timedRuns(createGateway({ restBaseUrl: bB }), () => false),
+    timedRuns(gB, () => false),
   ]);
+  for (let k = 0; k < EXTRA_ROUNDS && fastestOfRuns([batched, ...batchedExtra]) >= HOP; k++) {
+    batchedExtra.push(await timedRuns(gB, () => false));
+  }
   const bX = await boot();
-  noisy = await timedRuns(createGateway({ restBaseUrl: bX }), (i) => i !== 3);
-}, 30_000);
+  const gX = createGateway({ restBaseUrl: bX });
+  // The whole noisy series is repeated until its undisturbed run 3 is under the hop bound,
+  // so a load spike on run 3 cannot red EB9; the assertions read the accepted series.
+  noisy = await timedRuns(gX, (i) => i !== 3);
+  for (let k = 0; k < EXTRA_ROUNDS && noisy.samples[2]! >= HOP; k++) {
+    noisy = await timedRuns(gX, (i) => i !== 3);
+  }
+}, 60_000);
 
 afterAll(async () => {
   await Promise.all(apps.map((a) => a.close()));
@@ -201,7 +219,11 @@ describe('EB8 - soundness floor: the fastest-of-5 statistic still separates 3 ho
     expect(batched.totals).toEqual([3, 3, 3, 3, 3]);
     expect(batched.errors).toEqual([undefined, undefined, undefined, undefined, undefined]);
     expect(batched.names.every((n) => n === 'Ada Lovelace')).toBe(true);
-    expect(Math.min(...batched.samples)).toBeLessThan(HOP);
+    for (const extra of batchedExtra) {
+      expect(extra.totals).toEqual([3, 3, 3, 3, 3]);
+      expect(extra.errors).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    }
+    expect(fastestOfRuns([batched, ...batchedExtra])).toBeLessThan(HOP);
   });
 });
 

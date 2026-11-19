@@ -141,3 +141,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 119 | Order-insensitive downstream key: sort id-list params so TTL cache + coalescing hit on reordered ids (`YEAR_ASC`→`YEAR_DESC` 1 call → 0) (iter-106 scout A2) | planned | — |
 | 120 | README §6: `rest-client.ts` "one HTTP call per invocation" is false under coalescing/TTL (30 invocations → 3 calls); name both cross-request layers + `writes.ts`, behaviour-pinned (iter-106 scout B2) | planned | — |
 | 121 | README §9 records post-iter-82 decisions (coalescing, TTL cache, no `br`, `@defer` 406, POST never coalesced); guard: every opt-in option named in §9 (iter-106 scout B3) | planned | — |
+| 122 | HOTFIX (bcb46cb post-release BROKEN): burst + absolute-latency tests load-robust; `< 145` sites resample alone (min over more samples is sound, load only adds time), iter77 timeout 50→500 ms, iter103 burst failures self-describing; counts/thresholds unchanged | done | 107 |

@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1949%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1977%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -408,7 +408,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1949 tests across 76 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
+`npm test` — 1977 tests across 77 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -449,6 +449,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Git-free suite** (`test_iter104_behavior.test.ts`): runs the N+1 guard in throwaway repo copies with no git metadata. A clean copy passes, and changing `toBe(3)` to `toBe(4)`, renaming the batched title, `it.skip`, `it.only` or dropping the identical-data assertion each turn it red. It also checks that no file under `test/` spawns git, that the oracle still pins 21 and 3, and that the iter-62 / iter-80 `dist/` snapshot checks survive.
 - **Shared downstream cache** (`test_iter105_behavior.test.ts`): with `downstreamCacheTtlMs` a repeat nested sample query costs 0 downstream calls, 0 hook events and `downstreamCalls.total` 0 (3 + 3 when unset), a partial hit sends only the missing hop, entries expire after the TTL, never cross forwarded credentials or gateways, keep per-request `reviewer` redaction, never store a 500, off-contract, timed-out or reset answer, are cleared by every sent write, cap at 1000 (oldest evicted), and leave NAIVE at 21, `/readyz` at 1 call per probe and cached hits outside `maxDownstreamCalls`; `DOWNSTREAM_CACHE_TTL_MS` boots the same and fails fast on `0`, `abc`, `-5` and `2147483648`.
 - **Repeated-selection cap** (`test_iter106_behavior.test.ts`): more than 32 selections merging into one response position (flat repeats, `__typename` repeats, nested multiplication, leaf repeats, distinct fragments and inline fragments) answer `QUERY_TOO_REPETITIVE` with `path`, `selections` and `maxSelections` at 0 downstream calls over POST, GET and batch elements, without running graphql-js's specified rules, while 32 copies, a fragment spread 40 times and 600 distinct aliases are admitted, depth/complexity refusals are unchanged, fragment chains stay linear, and the sample query keeps 3/21 calls.
+- **Load-robust latency and burst checks** (`test_iter107_behavior.test.ts`): every `< 145 ms` hop site in the iter81/iter84 files reads a fastest resampled alone for at most 3 extra rounds (still asserting each run's exact downstream total), every `>= 145 ms` site stays single-pass, the iter103 bursts keep BURST 50 with exact 150/150 counts and print statuses, totals, codes and hits on failure, iter77's hang case times out at 500 ms, and a NAIVE 3-hop shape sampled 20 times alone never dips under 145 ms, so resampling cannot buy a false pass.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
@@ -464,7 +465,7 @@ If someone deletes a loader or sneaks a fetch into a resolver, the batched count
 
 - **N+1 oracle guard** (`n-plus-1-guard.test.ts`): pins the N+1 oracle's assertions without git. It reads `n-plus-1.test.ts` as text and requires its three test titles, the exact 21 / 3 call-count and per-route `expect` lines and the identical-data assertion, and no `.skip`/`.only`/`.todo`/`.fails`/`.skipIf`/`.runIf`/`xit(`/`xdescribe(`. It works in any copy of the repo and keeps biting after a weakening is committed.
 
-Same-process throughput ratios are not load-invariant in the parallel suite (the two mounts do not slow down together on a busy host), so they live in serial bench scripts such as `npm run bench:listener`, run on a quiet host, never in `npm test`.
+Same-process throughput ratios are not load-invariant in the parallel suite (the two mounts do not slow down together on a busy host), so they live in serial bench scripts such as `npm run bench:listener`, run on a quiet host, never in `npm test`. Absolute latency bounds in `npm test` compare against the 145 ms hop threshold using a resampled fastest for `<` (measured alone again when the concurrent pass misses) or a single-pass fastest for `>=`, because load only adds time and the backend's per-hop sleep is a floor no extra sample can beat.
 
 Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% functions**. Uncovered lines are mostly defensive error branches.
 

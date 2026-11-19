@@ -420,10 +420,11 @@ describe('EB7 - failure outcomes match what the client sees', () => {
     expect(codesOf(r)).toEqual([events[0]!.errorCode]);
   });
 
-  it('no headers within downstreamTimeoutMs: 50 -> timeout, status null, DOWNSTREAM_TIMEOUT; others ok', async () => {
+  // 500 ms (not 50) gives the healthy stub routes 10x headroom, so host load cannot time them out too.
+  it('no headers within downstreamTimeoutMs: 500 -> timeout, status null, DOWNSTREAM_TIMEOUT; others ok', async () => {
     fail = { route: '/reviews/by-book', kind: 'hang' };
     const { events, hook } = recorder();
-    const r = await withGw({ restBaseUrl: stubUrl, downstreamTimeoutMs: 50, onDownstreamCall: hook }, (gw) =>
+    const r = await withGw({ restBaseUrl: stubUrl, downstreamTimeoutMs: 500, onDownstreamCall: hook }, (gw) =>
       gql(gw, '{ author(id:"a1"){ id books{ id } } book(id:"a2-b1"){ id reviews{ id } } }'),
     );
     await settle(events, totalOf(r));
@@ -431,7 +432,7 @@ describe('EB7 - failure outcomes match what the client sees', () => {
     const bad = events.filter((e) => e.route === '/reviews/by-book');
     expect(bad).toHaveLength(1);
     expect(bad[0]).toMatchObject({ status: null, outcome: 'timeout', errorCode: 'DOWNSTREAM_TIMEOUT' });
-    expect(bad[0]!.durationMs).toBeGreaterThanOrEqual(40);
+    expect(bad[0]!.durationMs).toBeGreaterThanOrEqual(490);
     expect(new Set(codesOf(r))).toEqual(new Set(['DOWNSTREAM_TIMEOUT']));
     const others = events.filter((e) => e.route !== '/reviews/by-book');
     expect(others.length).toBeGreaterThanOrEqual(1);

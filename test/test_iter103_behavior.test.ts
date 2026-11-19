@@ -38,7 +38,11 @@ const BURST = 50;
 
 type Running = { url: string; restBaseUrl: string; backend: string; close(): Promise<void> };
 type StartFromEnv = (env: Record<string, string | undefined>, log?: (line: string) => void) => Promise<Running>;
-type Body = { data?: unknown; errors?: unknown[]; extensions?: { downstreamCalls?: { total: number } } };
+type Body = {
+  data?: unknown;
+  errors?: Array<{ extensions?: { code?: unknown } }>;
+  extensions?: { downstreamCalls?: { total: number } };
+};
 
 async function loadStart(): Promise<StartFromEnv> {
   return ((await import('../src/cli')) as unknown as { startFromEnv: StartFromEnv }).startFromEnv;
@@ -70,18 +74,48 @@ async function post(url: string, query: string): Promise<{ status: number; body:
   return { status: res.status, body: (await res.json()) as Body };
 }
 
-async function burst(r: Running): Promise<{ statuses: number[]; totals: number[]; sum: number; backendHits: number; bodies: Body[] }> {
+/**
+ * A burst request that rejects (socket reset, refused connect) is reported as status 0
+ * with its error text as a code, so a load failure shows up in `why` instead of
+ * aborting the test with a bare "fetch failed".
+ */
+async function postOrStatus0(url: string, query: string): Promise<{ status: number; body: Body }> {
+  try {
+    return await post(url, query);
+  } catch (e) {
+    return { status: 0, body: { errors: [{ extensions: { code: `FETCH_REJECTED: ${String(e)}` } }] } };
+  }
+}
+
+type Burst = { statuses: number[]; totals: number[]; sum: number; backendHits: number; bodies: Body[]; why: string };
+
+async function burst(r: Running): Promise<Burst> {
   const before = await hits(r);
-  const replies = await Promise.all(Array.from({ length: BURST }, () => post(r.url, SAMPLE)));
+  const replies = await Promise.all(Array.from({ length: BURST }, () => postOrStatus0(r.url, SAMPLE)));
   const after = await hits(r);
   const totals = replies.map((x) => x.body.extensions?.downstreamCalls?.total ?? NaN);
-  return {
-    statuses: replies.map((x) => x.status),
-    totals,
-    sum: totals.reduce((a, b) => a + b, 0),
-    backendHits: after - before,
-    bodies: replies.map((x) => x.body),
-  };
+  const statuses = replies.map((x) => x.status);
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const codes = [...new Set(replies.flatMap((x) => (x.body.errors ?? []).map((e) => String(e.extensions?.code))))];
+  // Every burst assertion carries this, so a red names its cause rather than "expected false to be true".
+  const why = JSON.stringify({ statuses, totals, codes, backendHits: after - before });
+  return { statuses, totals, sum, backendHits: after - before, bodies: replies.map((x) => x.body), why };
+}
+
+/** Explicit per-burst-test timeout: host load may slow a 50-request burst, never change its counts. */
+const BURST_TEST_MS = 60_000;
+/**
+ * Backend latency for the coalescing cases: a wider in-flight window, so a burst that
+ * takes longer than 50 ms to dispatch under load still lands on the first send.
+ */
+const COALESCE_LATENCY_MS = '200';
+
+/** The exact no-coalescing invariants: 50×200, every total 3, summed 150, backend hits 150. */
+function expectUncoalesced(b: Burst): void {
+  expect(b.statuses, b.why).toEqual(Array(BURST).fill(200));
+  expect(b.totals, b.why).toEqual(Array(BURST).fill(3));
+  expect(b.sum, b.why).toBe(150);
+  expect(b.backendHits, b.why).toBe(150);
 }
 
 function rawPost(url: string, query: string, headers: Record<string, string>): Promise<{ status: number; headers: http.IncomingHttpHeaders; raw: Buffer }> {
@@ -135,50 +169,42 @@ async function expectReject(env: Record<string, string>, name: string, raw: stri
 describe('EB1: COALESCE_IN_FLIGHT unset keeps the default (no coalescing)', () => {
   it('burst → 50×200, each total 3, summed 150, backend hits 150', async () => {
     const r = await boot({});
-    const b = await burst(r);
-    expect(b.statuses).toEqual(Array(BURST).fill(200));
-    expect(b.totals).toEqual(Array(BURST).fill(3));
-    expect(b.sum).toBe(150);
-    expect(b.backendHits).toBe(150);
-  });
+    expectUncoalesced(await burst(r));
+  }, BURST_TEST_MS);
 });
 
 describe('EB2: COALESCE_IN_FLIGHT=1 coalesces the burst', () => {
   it('burst → 50×200, data deep-equal to a single reply, summed ≤ 15 and === backend hits', async () => {
-    const r = await boot({ COALESCE_IN_FLIGHT: '1' });
+    const r = await boot({ COALESCE_IN_FLIGHT: '1', REST_LATENCY_MS: COALESCE_LATENCY_MS });
     const single = await post(r.url, SAMPLE);
     expect(single.status).toBe(200);
     expect(single.body.errors).toBeUndefined();
     expect(single.body.extensions?.downstreamCalls?.total).toBe(3);
     const b = await burst(r);
-    expect(b.statuses).toEqual(Array(BURST).fill(200));
+    expect(b.statuses, b.why).toEqual(Array(BURST).fill(200));
     for (const body of b.bodies) {
-      expect(body.errors).toBeUndefined();
+      expect(body.errors, b.why).toBeUndefined();
       expect(body.data).toEqual(single.body.data);
     }
-    expect(b.sum).toBeLessThanOrEqual(15);
-    expect(b.sum).toBeGreaterThanOrEqual(3);
-    expect(b.sum).toBe(b.backendHits);
-  });
+    expect(b.sum, b.why).toBeLessThanOrEqual(15);
+    expect(b.sum, b.why).toBeGreaterThanOrEqual(3);
+    expect(b.sum, b.why).toBe(b.backendHits);
+  }, BURST_TEST_MS);
 });
 
 describe('EB3: COALESCE_IN_FLIGHT accepted spellings', () => {
   it('COALESCE_IN_FLIGHT=true behaves like 1 (summed ≤ 15, === backend hits)', async () => {
-    const r = await boot({ COALESCE_IN_FLIGHT: 'true' });
+    const r = await boot({ COALESCE_IN_FLIGHT: 'true', REST_LATENCY_MS: COALESCE_LATENCY_MS });
     const b = await burst(r);
-    expect(b.statuses).toEqual(Array(BURST).fill(200));
-    expect(b.sum).toBeLessThanOrEqual(15);
-    expect(b.sum).toBe(b.backendHits);
-  });
+    expect(b.statuses, b.why).toEqual(Array(BURST).fill(200));
+    expect(b.sum, b.why).toBeLessThanOrEqual(15);
+    expect(b.sum, b.why).toBe(b.backendHits);
+  }, BURST_TEST_MS);
   for (const v of ['0', 'false', '']) {
     it(`COALESCE_IN_FLIGHT=${JSON.stringify(v)} behaves like unset (summed 150, backend hits 150)`, async () => {
       const r = await boot({ COALESCE_IN_FLIGHT: v });
-      const b = await burst(r);
-      expect(b.statuses).toEqual(Array(BURST).fill(200));
-      expect(b.totals).toEqual(Array(BURST).fill(3));
-      expect(b.sum).toBe(150);
-      expect(b.backendHits).toBe(150);
-    });
+      expectUncoalesced(await burst(r));
+    }, BURST_TEST_MS);
   }
 });
 

@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-107
+    lenses: unknown
+    - Candidate A1 -- OPERATOR PIN: de-flake the suite's absolute wall-clock assertions so `npm test` stays green under full-suite load, and write the load-invariance rule into §8 with a guard
+    - Candidate A2 -- The product's own quality gate appears nowhere a reader or CI looks: README never says `npm run typecheck`, §3 says `npm run build` "Type-check + emit", and the CI badge's workflow never type-checks test/
+    - Candidate A3 -- README §6 says `rest-client.ts` makes "one HTTP call per invocation"; since iter-100/105 an invocation can cost 0 calls. Redraw the bottom of the map and pin the sentence to behaviour (row 120)
+    - Candidate B1 -- OPERATOR PIN: de-flake the suite's absolute wall-clock assertions so the full suite stays green under load (do not touch 106's guard)
+    - Candidate B2 -- Retry-safe writes: `addReview(..., idempotencyKey: String)` returns the stored review at 0 downstream calls on a retry instead of creating a duplicate
+    - Candidate B3 -- Live updates: `Subscription.reviewAdded(bookId: ID!): Review!` over the existing SSE path, fed by every `addReview` sent through this gateway
+    winner: A1
+    ship: pending (not yet decided)
   iter-106
     lenses: performance-and-throughput, narrative-and-docs
     - A1 -- Admission refuses repeated same-response-name selections before graphql-js's quadratic overlap rule, so a 2.2 KB request costs about 0.5 ms instead of 130 ms and that shape's throughput goes from 11 to over 1 000 req/s
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- README §6 Architecture says `rest-client.ts` makes "one HTTP call per invocation", but since iter-100/105 one invocation can make 0 calls (a coalesced join or a TTL hit). Redraw the bottom of the map with the two cross-request layers, and pin that sentence to behaviour
     - Candidate B3 -- README §9 Design decisions stops at iter-82. None of the cross-request trade-offs shipped since (in-flight coalescing, the shared TTL cache, compression without `br`, the `@defer` 406 instead of buffering, never coalescing a POST) is recorded as a decision. Add them, with a guard that every opt-in option has a §9 entry
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED bcb46cb
   iter-105
     lenses: simplification-and-deletion, performance-and-throughput
     - Candidate A1 -- Delete the hand-maintained README test-count and coverage figures (2 badges, the §8 "N tests across M files" literal, the §8 coverage line) and the 19 `it`s in 14 files that pin them, one of which forbids fixing a figure that is 11 pp stale
@@ -731,4 +741,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-73 scouted iterations
+74 scouted iterations

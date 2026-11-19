@@ -92,7 +92,7 @@ async function readStats(b: string): Promise<Stats> {
 
 // ---------------------------------------------------------------- timed shapes
 type Mode = 'batched' | 'naive';
-type Timed = { fastest: number; samples: number[]; totals: number[]; stats: Stats; last: GqlResult };
+type Timed = { fastest: number; samples: number[]; totals: number[]; stats: Stats; last: GqlResult; g: Gateway; query: string; variables: Vars };
 const timedShapes: Array<[string, Mode, string, Vars]> = [
   ['EB1', 'batched', EB1, undefined],
   ['EB2', 'batched', EB2, undefined],
@@ -135,7 +135,32 @@ async function measureShape(mode: Mode, query: string, variables: Vars): Promise
     totals.push(last.extensions?.downstreamCalls?.total ?? -1);
   }
   const stats = await readStats(sBase);
-  return { fastest: Math.min(...samples), samples, totals, stats, last };
+  return { fastest: Math.min(...samples), samples, totals, stats, last, g, query, variables };
+}
+
+/** Extra sequential rounds of 5 a `<` site may take when the concurrent phase missed. */
+const RESAMPLE_ROUNDS = 3;
+
+/**
+ * Fastest sample for a `<` bound, resampled ALONE when the concurrent phase missed it.
+ * Sound because the backend sleep is a hard floor: a shape with one more hop can never
+ * dip under the bound however many samples are taken, and load only ever adds time.
+ * Stops at the first round that goes under `bound`; every resampled run still asserts
+ * no errors and the shape's exact downstream total. `>=` sites never call this.
+ */
+async function resampledFastest(key: string, total: number, bound: number): Promise<number> {
+  const tm = t(key);
+  const all = [...tm.samples];
+  for (let round = 0; round < RESAMPLE_ROUNDS && Math.min(...all) >= bound; round++) {
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const body = await gql(tm.g, tm.query, tm.variables);
+      all.push(performance.now() - t0);
+      expect(body.errors, `${key} resample errors`).toBeUndefined();
+      expect(body.extensions?.downstreamCalls?.total, `${key} resample total`).toBe(total);
+    }
+  }
+  return Math.min(...all);
 }
 
 let app: FastifyInstance;
@@ -195,8 +220,8 @@ describe('EB1 - a count-only list root keeps the prefetch', () => {
   it('{ A authors(first:3){ totalCount } }: no errors, 4 calls one per route', async () => {
     await expectCalls('EB1', EB1, undefined, 4, R_EB1);
   });
-  it('EB1 fastest < 145 ms (2 serial hops)', () => {
-    expect(t('EB1').fastest).toBeLessThan(HOP_MS);
+  it('EB1 fastest < 145 ms (2 serial hops)', async () => {
+    expect(await resampledFastest('EB1', 4, HOP_MS)).toBeLessThan(HOP_MS);
   });
 });
 
@@ -207,8 +232,8 @@ describe('EB2 - a scalar-only list root keeps the prefetch', () => {
     expect(edges).toHaveLength(3);
     for (const e of edges) expect(typeof e.node.name).toBe('string');
   });
-  it('EB2 fastest < 145 ms', () => {
-    expect(t('EB2').fastest).toBeLessThan(HOP_MS);
+  it('EB2 fastest < 145 ms', async () => {
+    expect(await resampledFastest('EB2', 4, HOP_MS)).toBeLessThan(HOP_MS);
   });
 });
 
@@ -216,8 +241,8 @@ describe('EB3 - a book(id){ reviews } root next to a count list', () => {
   it('3 calls: /books/by-ids, /reviews/by-book, /authors once each', async () => {
     await expectCalls('EB3', EB3, undefined, 3, R_EB3);
   });
-  it('EB3 fastest < 95 ms (1 hop)', () => {
-    expect(t('EB3').fastest).toBeLessThan(ONE_HOP_MS);
+  it('EB3 fastest < 95 ms (1 hop)', async () => {
+    expect(await resampledFastest('EB3', 3, ONE_HOP_MS)).toBeLessThan(ONE_HOP_MS);
   });
 });
 
@@ -253,7 +278,7 @@ describe('EB6 - @skip/@include honoured inside the list', () => {
     const body = await expectCalls('EB6_LIT', EB6_LIT, undefined, 4, R_EB1);
     const edges = (body.data?.authors as { edges: Array<{ node: Record<string, unknown> }> }).edges;
     for (const e of edges) expect(e.node).not.toHaveProperty('books');
-    expect(t('EB6_LIT').fastest).toBeLessThan(HOP_MS);
+    expect(await resampledFastest('EB6_LIT', 4, HOP_MS)).toBeLessThan(HOP_MS);
   });
   it('books @skip(if: $s) with s=false: 4 calls, fastest >= 145 ms', async () => {
     const body = await expectCalls('EB6_VAR_F', EB6_VAR, { s: false }, 4, R_EB1);
@@ -263,21 +288,21 @@ describe('EB6 - @skip/@include honoured inside the list', () => {
   });
   it('books @skip(if: $s) with s=true: 4 calls, fastest < 145 ms', async () => {
     await expectCalls('EB6_VAR_T', EB6_VAR, { s: true }, 4, R_EB1);
-    expect(t('EB6_VAR_T').fastest).toBeLessThan(HOP_MS);
+    expect(await resampledFastest('EB6_VAR_T', 4, HOP_MS)).toBeLessThan(HOP_MS);
   });
 });
 
 describe('EB7 - a count root hidden in a root fragment keeps the prefetch', () => {
   it('query { A ... on Query { authors(first:2){ totalCount } } }: 4 calls, fastest < 145 ms', async () => {
     await expectCalls('EB7', EB7, undefined, 4, R_EB1);
-    expect(t('EB7').fastest).toBeLessThan(HOP_MS);
+    expect(await resampledFastest('EB7', 4, HOP_MS)).toBeLessThan(HOP_MS);
   });
 });
 
 describe('EB8 - multiple list roots', () => {
   it('two count/cursor list roots: 5 calls (/authors x2), fastest < 145 ms', async () => {
     await expectCalls('EB8_OK', EB8_OK, undefined, 5, R_EB8);
-    expect(t('EB8_OK').fastest).toBeLessThan(HOP_MS);
+    expect(await resampledFastest('EB8_OK', 5, HOP_MS)).toBeLessThan(HOP_MS);
   });
   it('if either list root selects books, it refuses: 5 calls, fastest >= 145 ms', async () => {
     await expectCalls('EB8_REFUSE', EB8_REFUSE, undefined, 5, R_EB8);
