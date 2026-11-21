@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-1977%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-2024%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -103,7 +103,7 @@ REST_BASE_URL=http://127.0.0.1:4001 npx graphql-rest-gateway
 
 | Variable | Rule | Default |
 | --- | --- | --- |
-| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend → `restBaseUrl`; may include a path prefix, no query string or fragment | unset → bundled backend |
+| `REST_BASE_URL` | absolute `http:`/`https:` URL of an external REST backend → `restBaseUrl`; may include a path prefix, no query string or fragment; credentials in the URL (`user:password@`) are rejected at startup with the userinfo shown as `***`, so a backend that authenticates callers should get them via `FORWARD_HEADERS` (e.g. `authorization`) instead | unset → bundled backend |
 | `PORT` | non-negative integer (`0` = random port) | `4000` |
 | `REST_LATENCY_MS` | non-negative integer, bundled mode only (ignored with `REST_BASE_URL`) | `25` |
 | `MAX_DEPTH` | positive integer → `maxDepth` | `10` |
@@ -408,7 +408,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 1977 tests across 77 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
+`npm test` — 2024 tests across 78 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -450,6 +450,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Shared downstream cache** (`test_iter105_behavior.test.ts`): with `downstreamCacheTtlMs` a repeat nested sample query costs 0 downstream calls, 0 hook events and `downstreamCalls.total` 0 (3 + 3 when unset), a partial hit sends only the missing hop, entries expire after the TTL, never cross forwarded credentials or gateways, keep per-request `reviewer` redaction, never store a 500, off-contract, timed-out or reset answer, are cleared by every sent write, cap at 1000 (oldest evicted), and leave NAIVE at 21, `/readyz` at 1 call per probe and cached hits outside `maxDownstreamCalls`; `DOWNSTREAM_CACHE_TTL_MS` boots the same and fails fast on `0`, `abc`, `-5` and `2147483648`.
 - **Repeated-selection cap** (`test_iter106_behavior.test.ts`): more than 32 selections merging into one response position (flat repeats, `__typename` repeats, nested multiplication, leaf repeats, distinct fragments and inline fragments) answer `QUERY_TOO_REPETITIVE` with `path`, `selections` and `maxSelections` at 0 downstream calls over POST, GET and batch elements, without running graphql-js's specified rules, while 32 copies, a fragment spread 40 times and 600 distinct aliases are admitted, depth/complexity refusals are unchanged, fragment chains stay linear, and the sample query keeps 3/21 calls.
 - **Load-robust latency and burst checks** (`test_iter107_behavior.test.ts`): every `< 145 ms` hop site in the iter81/iter84 files reads a fastest resampled alone for at most 3 extra rounds (still asserting each run's exact downstream total), every `>= 145 ms` site stays single-pass, the iter103 bursts keep BURST 50 with exact 150/150 counts and print statuses, totals, codes and hits on failure, iter77's hang case times out at 500 ms, and a NAIVE 3-hop shape sampled 20 times alone never dips under 145 ms, so resampling cannot buy a false pass.
+- **Credentialed backend URL** (`test_iter109_behavior.test.ts`): a `restBaseUrl` / `REST_BASE_URL` with a username or password (`http://svc:pw@host/`, `http://svc@host/`, `http://:pw@host/`) is refused before any request, as a `TypeError` from `createGateway`, exit 1 from `npm start` and exit 2 from check-backend, with the userinfo redacted to `***` in that message and in every other REST_BASE_URL error, so the password never reaches stdout or stderr; URLs without userinfo (including `@` in the path and an empty `http://@host/`) behave as before.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 

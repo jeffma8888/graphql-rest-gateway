@@ -113,15 +113,60 @@ function assertKnownKeys(opts: Record<string, unknown>): void {
 }
 
 /**
+ * The raw URL text with its userinfo replaced by `***`, so an error message
+ * that echoes a backend URL never writes a password to a log aggregator.
+ * WHY raw text and not `URL.href`: the messages quote what the operator
+ * typed, including values `URL` cannot parse at all (`ht!tp://u:p@x`).
+ * The authority starts after the first `:` or `//` (whichever comes first)
+ * plus any run of `/` or `\`, which also covers WHATWG's lenient
+ * `http:u:p@h` and `http:\\u:p@h` spellings, and it ends at the first
+ * `/`, `\`, `?` or `#`; everything up to its LAST `@` is userinfo (an
+ * unencoded `@` in a password, `a:b@c@h`, still belongs to it).
+ */
+export function redactUserinfo(raw: string): string {
+  const colon = raw.indexOf(':');
+  const slashes = raw.search(/[/\\]{2}/);
+  const marks = [colon === -1 ? -1 : colon + 1, slashes].filter((i) => i !== -1);
+  if (marks.length === 0) return raw;
+  let start = Math.min(...marks);
+  while (raw[start] === '/' || raw[start] === '\\') start += 1;
+  const end = raw.slice(start).search(/[/\\?#]/);
+  const authority = end === -1 ? raw.slice(start) : raw.slice(start, start + end);
+  const at = authority.lastIndexOf('@');
+  return at === -1 ? raw : `${raw.slice(0, start)}***${raw.slice(start + at)}`;
+}
+
+/**
+ * Node's fetch (undici) refuses to build a request from a URL with a
+ * non-empty username or password, so such a backend URL can never serve a
+ * single call: every query would surface as a misleading
+ * `DOWNSTREAM_UNREACHABLE`. The library and the CLI both refuse it with this
+ * one rule and this one (redacted) wording. `http://@h/` parses to empty
+ * userinfo and is fetchable, so it stays accepted.
+ */
+export function credentialsError(name: string, raw: string, url: URL): string | undefined {
+  if (url.username === '' && url.password === '') return undefined;
+  return `${name} must not contain credentials (user:password@ is refused by Node's fetch), got ${JSON.stringify(redactUserinfo(raw))}`;
+}
+
+/** {@link describe}, but a string's userinfo is redacted first. */
+function describeUrl(value: unknown): string {
+  return describe(typeof value === 'string' ? redactUserinfo(value) : value);
+}
+
+/**
  * Required, and only http(s): `localhost:4001` parses with protocol
- * `localhost:`. A query string or fragment stays accepted (and ignored) here,
- * as the README documents; only the CLI rejects it.
+ * `localhost:`. Credentials are refused (see {@link credentialsError}). A
+ * query string or fragment stays accepted (and ignored) here, as the README
+ * documents; only the CLI rejects it.
  */
 function assertRestBaseUrl(value: unknown): void {
-  const protocol = typeof value === 'string' && URL.canParse(value) ? new URL(value).protocol : undefined;
-  if (protocol !== 'http:' && protocol !== 'https:') {
-    throw new TypeError(`restBaseUrl must be an absolute http(s) URL, got ${describe(value)}`);
+  const url = typeof value === 'string' && URL.canParse(value) ? new URL(value) : undefined;
+  if (typeof value !== 'string' || url === undefined || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    throw new TypeError(`restBaseUrl must be an absolute http(s) URL, got ${describeUrl(value)}`);
   }
+  const credentials = credentialsError('restBaseUrl', value, url);
+  if (credentials !== undefined) throw new TypeError(credentials);
 }
 
 /** Omitted means default; `NaN`/`Infinity`/`0`/`2.5`/`"10"`/`null` are all rejected. */

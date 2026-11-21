@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-109
+    lenses: integration-and-adoption
+    - Candidate A1 -- Load de-flake, round 2: resample test_iter76's 2-hop `< 145` ms bounds alone, and make test_iter80 EB8's CLI `< 5000` ms bound load-robust
+    - Candidate A2 -- A `REST_BASE_URL` (or `restBaseUrl`) containing credentials is refused at boot with the secret redacted, instead of being printed and then failing every query as `DOWNSTREAM_UNREACHABLE` (row 112)
+    - Candidate A3 -- CI runs the product's own quality gate: `npm run typecheck` in ci.yml, named in README, with a guard that the workflow runs every command in the gate (row 53, typecheck half)
+    - Candidate B1 -- `check-backend --writes`: the pre-flight covers the write route that `addReview` depends on, so a read-only backend no longer passes 5/5 and then turns every review into a false `NOT_FOUND` (row 110)
+    - Candidate B2 -- `--help` on both installed bins prints every environment variable, generated from the shipped `OPTION_ENV` map, and exits 0 without booting
+    - Candidate B3 -- Embedders reuse the CLI's env contract: the entry exports `optionsFromEnv(env)` (and `OPTION_ENV`), and `startFromEnv` calls it, so there is one reader path (row 113)
+    winner: A2
+    ship: pending (not yet decided)
   iter-107
     lenses: unknown
     - Candidate A1 -- OPERATOR PIN: de-flake the suite's absolute wall-clock assertions so `npm test` stays green under full-suite load, and write the load-invariance rule into §8 with a guard
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Retry-safe writes: `addReview(..., idempotencyKey: String)` returns the stored review at 0 downstream calls on a retry instead of creating a duplicate
     - Candidate B3 -- Live updates: `Subscription.reviewAdded(bookId: ID!): Review!` over the existing SSE path, fed by every `addReview` sent through this gateway
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED a60d50b
   iter-106
     lenses: performance-and-throughput, narrative-and-docs
     - A1 -- Admission refuses repeated same-response-name selections before graphql-js's quadratic overlap rule, so a 2.2 KB request costs about 0.5 ms instead of 130 ms and that shape's throughput goes from 11 to over 1 000 req/s
@@ -741,4 +751,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-74 scouted iterations
+75 scouted iterations

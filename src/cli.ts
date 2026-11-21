@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildBackend } from './rest-backend/server.js';
 import { createGateway, type GatewayOptions } from './gateway/server.js';
 import { validateForwardHeaders } from './gateway/datasources/rest-client.js';
-import { MAX_TIMEOUT_MS, assertGraphqlEndpoint } from './gateway/options.js';
+import { MAX_TIMEOUT_MS, assertGraphqlEndpoint, credentialsError, redactUserinfo } from './gateway/options.js';
 import { createDrainAwareListener } from './http-adapter.js';
 
 /**
@@ -57,22 +57,26 @@ function readInt(name: string, raw: string | undefined, min: 0 | 1, max?: number
  * Only http(s) makes sense for a REST backend; `localhost:4001` parses as protocol `localhost:`.
  * A path prefix (`/api/v1`) is honoured downstream, but a query string or fragment would be
  * silently discarded on every call, so it is rejected. The raw `?`/`#` check catches a bare
- * `http://h/?`, whose parsed `search` is empty. Exported so `npm run check-backend`
- * rejects exactly what `npm start` rejects, with the same message.
+ * `http://h/?`, whose parsed `search` is empty. Credentials are refused by the library's own
+ * rule, and every echoed value has its userinfo redacted so no password reaches stderr.
+ * Exported so `npm run check-backend` rejects exactly what `npm start` rejects, with the same message.
  */
 export function readRestBaseUrl(raw: string | undefined): string | undefined {
   if (isUnset(raw)) return undefined;
+  const shown = JSON.stringify(redactUserinfo(raw));
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    throw new Error(`REST_BASE_URL must be an absolute http(s) URL, got ${JSON.stringify(raw)}`);
+    throw new Error(`REST_BASE_URL must be an absolute http(s) URL, got ${shown}`);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`REST_BASE_URL must use http: or https:, got ${JSON.stringify(raw)}`);
+    throw new Error(`REST_BASE_URL must use http: or https:, got ${shown}`);
   }
+  const credentials = credentialsError('REST_BASE_URL', raw, parsed);
+  if (credentials !== undefined) throw new Error(credentials);
   if (parsed.search !== '' || parsed.hash !== '' || /[?#]/.test(raw)) {
-    throw new Error(`REST_BASE_URL must not contain a query string or fragment, got ${JSON.stringify(raw)}`);
+    throw new Error(`REST_BASE_URL must not contain a query string or fragment, got ${shown}`);
   }
   return raw;
 }
