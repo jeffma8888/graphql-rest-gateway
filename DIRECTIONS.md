@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-112
+    lenses: performance-and-throughput, narrative-and-docs
+    - Candidate A1 -- Stale-while-revalidate for the shared TTL cache: after expiry, readers get the expired body at 0 waited calls while ONE background fill per key refreshes it (expiry SAMPLE 173.6 ms → about 3 ms)
+    - Candidate A2 -- The TTL cache answers per-key lookups from batched by-key bodies: a detail view after the dashboard costs 1 call instead of 3 (111 ms → about 55 ms), and a reordered subset costs 0 (row 132, which subsumes row 119)
+    - Candidate A3 -- Quality-gate wall clock: prebundle the inlined graphql/Yoga chain with `deps.optimizer.ssr` (20.6 s → 18.8 s wall, 90 → 79 s CPU, 0 test edits; row 99, re-measured)
+    - Candidate B1 -- The `restBaseUrl` row in the GatewayOptions reference states the iter-109 credential refusal, and a guard ties every row to what `createGateway` actually throws
+    - Candidate B2 -- README §6 and §10 tell the cross-request story that iters 100-111 shipped: the architecture map stops saying "one HTTP call per invocation", and §10 stops listing shipped work as future
+    - Candidate B3 -- The coverage figures in the badge and §8 are 11 pp stale. Correct them from a measured run, and make `npm run coverage` fail when the README drifts
+    winner: B2
+    ship: pending (not yet decided)
   iter-111
     lenses: performance-and-throughput
     - Candidate A1 -- One `restBaseUrl` rule (row 128): `npm start` and check-backend call the library validator, and keep only their query/fragment add-on
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- The TTL cache reuses batched by-key bodies per key: a detail view after the dashboard costs 1 call / about 55 ms instead of 3 calls / 111 ms
     - Candidate B3 -- `ETag` + `If-None-Match` on GraphQL GET JSON replies: an unchanged repeat poll gets a 304 with 0 body bytes instead of 2082 B (488 B gzip)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 8c9b224
   iter-110
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- Opt-in `Server-Timing` header (`serverTiming` / `SERVER_TIMING=1`), so browser devtools and APM/RUM agents can see the downstream cost of a GraphQL reply
@@ -771,4 +781,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-77 scouted iterations
+78 scouted iterations

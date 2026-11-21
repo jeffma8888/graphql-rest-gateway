@@ -3,7 +3,7 @@
 > Schema-first GraphQL gateway that wraps REST backends and kills the N+1 problem with request-scoped DataLoader batching.
 
 [![CI](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffma8888/graphql-rest-gateway/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-2089%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-2117%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-~86%25%20lines-green)
 ![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -312,11 +312,17 @@ services.ts         business seam: chooses a batched loader (per-key) vs a
    ├────────────▶ loaders.ts          request-scoped DataLoaders (batch + cache)
    │                    │
    ▼                    ▼
-datasources/*       the ONLY layer that knows downstream URL shapes
-   │
+datasources/*       the ONLY layer that knows downstream URL shapes: the read
+   │                routes in index.ts, and apart from them
+writes.ts           the one write path (Mutation.addReview -> POST /reviews);
+   │                every write it sends clears the shared TTL cache
    ▼
-rest-client.ts      one HTTP call per invocation; counts calls (the instrument
-   │                behind the benchmark + regression test)
+rest-client.ts      at most one HTTP call per invocation; counts the calls
+   │                (0 on a TTL hit or an in-flight join), the instrument
+   │                behind the benchmark + regression test. Two cross-request
+   │                layers, both opt-in and GET-only: coalesceInFlight joins
+   │                an identical in-flight GET, and downstreamCacheTtlMs keeps
+   │                raw GET bodies for a TTL
    ▼
 Fastify REST backend (bundled, canned JSON, artificial latency)
 ```
@@ -412,7 +418,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 
 ## 8. Testing
 
-`npm test` — 2089 tests across 80 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
+`npm test` — 2117 tests across 81 files (Vitest), all green. The suite needs no git checkout, so it runs the same from a tarball or ZIP export:
 
 - **Unit** — DataLoader batching/grouping/caching (`loaders.test.ts`), Relay cursor round-trip + pageInfo (`pagination.test.ts`), depth/complexity rules (`security.test.ts`), auth parsing + redaction (`auth.test.ts`).
 - **Integration** — full request through the real Yoga HTTP handler (`integration.test.ts`): nested query, cursor pagination across pages, depth rejection, complexity rejection, auth redaction.
@@ -457,6 +463,7 @@ The `RestClient` and the REST backend both count calls; the backend exposes `GET
 - **Credentialed backend URL** (`test_iter109_behavior.test.ts`): a `restBaseUrl` / `REST_BASE_URL` with a username or password (`http://svc:pw@host/`, `http://svc@host/`, `http://:pw@host/`) is refused before any request, as a `TypeError` from `createGateway`, exit 1 from `npm start` and exit 2 from check-backend, with the userinfo redacted to `***` in that message and in every other REST_BASE_URL error, so the password never reaches stdout or stderr; URLs without userinfo (including `@` in the path and an empty `http://@host/`) behave as before.
 - **Server-Timing header** (`test_iter110_behavior.test.ts`): with `serverTiming: true` every non-streamed JSON reply carries one `server-timing: downstream;dur=<ms>;desc="<N> calls"` whose `N` equals `extensions.downstreamCalls.total`, the `onDownstreamCall` events and the backend hits (3 for the nested sample over POST and GET, 1 for a root `book`, a refused connect and a `NOT_FOUND`, 0 for syntax, validation, `QUERY_TOO_DEEP`, unauthenticated writes and shared-cache repeats), and whose `dur` is the sum of the events' `durationMs`. A batch gets one header, gzip keeps it, `@defer`/SSE streams, GraphiQL, `/healthz` and `/readyz` never carry it, and off (the default) gives byte-identical bodies at the same 3 calls. `SERVER_TIMING=1`/`true` turns it on for `npm start` and `yes` exits 1 before listening.
 - **Single-flight shared-cache fills** (`test_iter111_behavior.test.ts`): with `downstreamCacheTtlMs` on and `coalesceInFlight` off, a cold or post-expiry burst of 50 nested sample queries costs 3 downstream calls, 3 hook events and Σ `downstreamCalls.total` 3 (150 with neither option), a warm burst costs 0, the sender of a shared GET counts it and its joiners count 0, forwarded `authorization` values and separate gateways never share a fill, a failed fill (500) is shared once and never stored, a read started after a completed write never joins the pre-write GET, the writer's own read still sends its GET, an aborted sender leaves its joiner served at 1 GET, and NAIVE, `/readyz` and a cold serial query keep their counts.
+- **Architecture map + what's-next guard** (`test_iter112_behavior.test.ts`): pins README §6 and §10 to shipped behaviour. Live, `downstreamCacheTtlMs` makes the nested sample cost 3 calls then 0 on an identical repeat, and `coalesceInFlight` makes 2 concurrent samples cost 3 calls (6 without). As text, the §6 map says "at most one HTTP call per invocation", names both opt-in layers and `writes.ts` / `addReview`, and every `.ts` it names exists under `src/`. The §10 OpenTelemetry bullet names `onDownstreamCall`, not `/__stats`; the Redis bullet says the cache shipped per process and the next step is cross-replica; every backticked §10 span resolves to a real route, path or symbol; and every bullet naming a shipped option says so.
 - **Backend pre-flight** (`test_iter67_behavior.test.ts`): `npm run check-backend` against in-process `node:http` fakes that each break the REST contract one way (a deleted or retyped field per dataset key, a wrong join key, a wrapped list, a 404), plus exit codes and the bundled backend's teardown.
 - **The N+1 regression test** (`n-plus-1.test.ts`) — the most important artifact. It runs the same query in naive vs batched mode against the real backend and asserts the **exact** downstream call counts:
 
@@ -493,9 +500,9 @@ Coverage (`npm run coverage`, istanbul): **~84% statements / ~86% lines / ~89% f
 ## 10. What I'd do next in production
 
 - **Apollo Federation / schema stitching** — split the graph into subgraphs owned by different teams as the REST estate grows.
-- **A response/entity cache** — layer a shared cache (Redis) *behind* the request-scoped loaders with explicit TTLs + invalidation, keeping the per-request cache for dedup and the shared cache for cross-request reuse.
+- **A cross-replica downstream cache** — the opt-in `downstreamCacheTtlMs` cache already shipped: it sits *behind* the request-scoped loaders, keeps raw GET bodies for a TTL and is cleared by every write, but it lives in one gateway process. Next is a store shared across replicas (Redis) so a fill on one replica answers the others, with invalidation fanned out to every replica.
 - **Schema registry + checks** — publish the SDL to a registry and run breaking-change checks in CI against live operation traffic.
-- **OpenTelemetry tracing** — spans per resolver + per downstream call (the `/__stats` counter is the placeholder seam), exported to a collector for latency attribution.
+- **OpenTelemetry tracing** — spans per resolver + per downstream call, exported to a collector for latency attribution. The per-call seam exists today: the `onDownstreamCall` hook already fires once per downstream call with its route template, status, duration and outcome, so a span exporter only has to hook into it.
 - **Persisted queries + APQ** — allowlist known operations to shrink payloads and shut down arbitrary-query DoS.
 - **Real auth** — replace the stub bearer parser with JWT/JWKS verification (scope-based field authorization is already demonstrated on `Review.reviewer`).
 
