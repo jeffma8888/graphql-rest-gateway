@@ -160,6 +160,7 @@ export const OPTION_ENV: Record<keyof GatewayOptions, string | null> = {
   compressMinBytes: 'COMPRESS_MIN_BYTES',
   coalesceInFlight: 'COALESCE_IN_FLIGHT',
   downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
+  serverTiming: 'SERVER_TIMING',
 };
 
 interface CliConfig {
@@ -195,6 +196,7 @@ function parseEnv(env: Env): CliConfig {
       compressMinBytes: readCompressMinBytes(env.COMPRESS_MIN_BYTES),
       coalesceInFlight: readFlag('COALESCE_IN_FLIGHT', env.COALESCE_IN_FLIGHT),
       downstreamCacheTtlMs: readInt('DOWNSTREAM_CACHE_TTL_MS', env.DOWNSTREAM_CACHE_TTL_MS, 1, MAX_TIMEOUT_MS),
+      serverTiming: readFlag('SERVER_TIMING', env.SERVER_TIMING),
     },
   };
 }

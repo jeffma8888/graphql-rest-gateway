@@ -303,6 +303,7 @@ const EXPECTED_MAP: Record<keyof GatewayOptions, string | null> = {
   compressMinBytes: 'COMPRESS_MIN_BYTES',
   coalesceInFlight: 'COALESCE_IN_FLIGHT',
   downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
+  serverTiming: 'SERVER_TIMING',
 };
 
 describe('EB9: OPTION_ENV is exported and typed Record<keyof GatewayOptions, string | null>', () => {
@@ -311,7 +312,7 @@ describe('EB9: OPTION_ENV is exported and typed Record<keyof GatewayOptions, str
     const typed: Record<keyof GatewayOptions, string | null> = OPTION_ENV;
     expect(typed).toBe(OPTION_ENV);
   });
-  it('maps the 11 env-reachable options to their variables and nulls exactly loaderOptions / onDownstreamCall', () => {
+  it('maps the 12 env-reachable options to their variables and nulls exactly loaderOptions / onDownstreamCall', () => {
     expect({ ...OPTION_ENV }).toEqual(EXPECTED_MAP);
     expect(Object.keys(OPTION_ENV).sort()).toEqual(Object.keys(EXPECTED_MAP).sort());
     const nulls = Object.entries(OPTION_ENV)
@@ -353,7 +354,7 @@ describe('EB10: drift guard OPTION_ENV ↔ README ↔ cli.ts', () => {
   it('every non-null value has its own README env-table row whose rule cell names the option in backticks', () => {
     const rows = envRows();
     const mapped = Object.entries(OPTION_ENV).filter((e): e is [string, string] => e[1] !== null);
-    expect(mapped).toHaveLength(11);
+    expect(mapped).toHaveLength(12);
     for (const [opt, name] of mapped) {
       const own = rows.filter((l) => l.startsWith(`| \`${name}\` |`));
       expect(own, name).toHaveLength(1);
@@ -369,9 +370,9 @@ describe('EB10: drift guard OPTION_ENV ↔ README ↔ cli.ts', () => {
 });
 
 describe('EB11: README env table rows and library-only sentence', () => {
-  it('env table has 13 rows (10 prior + COALESCE_IN_FLIGHT + COMPRESS_MIN_BYTES + DOWNSTREAM_CACHE_TTL_MS, iter-105), each exactly once', () => {
+  it('env table has 14 rows (10 prior + COALESCE_IN_FLIGHT + COMPRESS_MIN_BYTES + DOWNSTREAM_CACHE_TTL_MS, iter-105, + SERVER_TIMING, iter-110), each exactly once', () => {
     const rows = envRows();
-    expect(rows).toHaveLength(13);
+    expect(rows).toHaveLength(14);
     expect(rows.filter((r) => r.startsWith('| `COALESCE_IN_FLIGHT` |'))).toHaveLength(1);
     expect(rows.filter((r) => r.startsWith('| `COMPRESS_MIN_BYTES` |'))).toHaveLength(1);
   });
@@ -398,8 +399,8 @@ describe('EB11: README env table rows and library-only sentence', () => {
     expect(sentence).toBeDefined();
     expect(sentence).toMatch(/library-only/);
   });
-  it('the GatewayOptions options table keeps exactly 13 data rows', () => {
-    expect(optionRows()).toHaveLength(13);
+  it('the GatewayOptions options table keeps exactly 14 data rows', () => {
+    expect(optionRows()).toHaveLength(14);
   });
 });
 

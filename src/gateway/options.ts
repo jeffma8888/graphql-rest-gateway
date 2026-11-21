@@ -32,6 +32,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   compressMinBytes: true,
   coalesceInFlight: true,
   downstreamCacheTtlMs: true,
+  serverTiming: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -257,4 +258,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertGraphqlEndpoint(opts.graphqlEndpoint);
   assertCompressMinBytes(opts.compressMinBytes);
   assertBoolean('coalesceInFlight', opts.coalesceInFlight);
+  assertBoolean('serverTiming', opts.serverTiming);
 }

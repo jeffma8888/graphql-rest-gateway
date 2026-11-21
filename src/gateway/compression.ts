@@ -25,7 +25,7 @@ const ENCODERS: Record<Coding, (body: Uint8Array) => Promise<Buffer>> = {
  * WHY not `\bjson\b`: that would also match `application/json-patch`, and the
  * streaming types (`multipart/mixed`, `text/event-stream`) must never match.
  */
-const JSON_CONTENT_TYPE = /^application\/([^;\s]+\+)?json\s*(;|$)/i;
+export const JSON_CONTENT_TYPE = /^application\/([^;\s]+\+)?json\s*(;|$)/i;
 
 /** An RFC 9110 qvalue: `0`..`1` with up to three decimals. */
 const QVALUE = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/;

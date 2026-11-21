@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-110
+    lenses: integration-and-adoption, simplification-and-deletion
+    - Candidate A1 -- Opt-in `Server-Timing` header (`serverTiming` / `SERVER_TIMING=1`), so browser devtools and APM/RUM agents can see the downstream cost of a GraphQL reply
+    - Candidate A2 -- The `npm start` boot log names the effective configuration (one `Options:` line generated from `OPTION_ENV`), so an operator can see that an opt-in took effect (row 111)
+    - Candidate A3 -- The README's two-terminal on-ramp, `npm run backend`, follows the same fail-fast env contract as `npm start` and prints the exact next commands
+    - Candidate B1 -- One `@skip`/`@include` predicate: the `@defer` accept guard reuses lookahead's `isIncluded` instead of keeping its own copy
+    - Candidate B2 -- One `restBaseUrl` rule: `npm start` and check-backend call the library's URL validator and keep only their query/fragment add-on
+    - Candidate B3 -- Delete the hand-kept README test-count and coverage figures, and the `it`s that pin them
+    winner: A1
+    ship: pending (not yet decided)
   iter-109
     lenses: integration-and-adoption
     - Candidate A1 -- Load de-flake, round 2: resample test_iter76's 2-hop `< 145` ms bounds alone, and make test_iter80 EB8's CLI `< 5000` ms bound load-robust
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- `--help` on both installed bins prints every environment variable, generated from the shipped `OPTION_ENV` map, and exits 0 without booting
     - Candidate B3 -- Embedders reuse the CLI's env contract: the entry exports `optionsFromEnv(env)` (and `OPTION_ENV`), and `startFromEnv` calls it, so there is one reader path (row 113)
     winner: A2
-    ship: pending (not yet decided)
+    ship: PUSHED f9b6944
   iter-107
     lenses: unknown
     - Candidate A1 -- OPERATOR PIN: de-flake the suite's absolute wall-clock assertions so `npm test` stays green under full-suite load, and write the load-invariance rule into §8 with a guard
@@ -751,4 +761,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-75 scouted iterations
+76 scouted iterations

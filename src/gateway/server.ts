@@ -27,6 +27,7 @@ import { mergedSelectionErrors } from './security/merged-selections.js';
 import { validateGatewayOptions } from './options.js';
 import { deferAcceptPlugin } from './defer.js';
 import { compressionPlugin } from './compression.js';
+import { DownstreamTiming, serverTimingPlugin, type DownstreamTotals } from './server-timing.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -107,6 +108,17 @@ export interface GatewayOptions {
    * fires no `onDownstreamCall`. Never used by `/readyz` or under NAIVE loaders.
    */
   downstreamCacheTtlMs?: number;
+  /**
+   * Opt-in (default `false`): every non-streamed GraphQL JSON reply carries
+   * `server-timing: downstream;dur=<ms>;desc="<N> calls"`, the request's
+   * downstream REST cost, for devtools, RUM/APM agents and CDN logs. `N` is
+   * `extensions.downstreamCalls.total` (batch-wide for a batched POST); `dur`
+   * is the SUM of the settled calls' `durationMs`, not wall-clock. WHY opt-in
+   * and aggregate only: timing is a latency side channel to every client, and
+   * per-route data is backend topology. Never on `@defer`/SSE streams, whose
+   * headers leave before the count is final.
+   */
+  serverTiming?: boolean;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -426,9 +438,12 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   // `Request`. Keying on it makes a batch share one RestClient/loader set/
   // budget, while a new edge HTTP request (a new Request) never reuses one.
   const contexts = new WeakMap<Request, GatewayContext>();
+  // Only filled under `serverTiming`, so an opted-out gateway keeps HEAD's hook-free fast path.
+  const timings = new WeakMap<GatewayContext, DownstreamTiming>();
   const contextFor = (request: Request): GatewayContext => {
     let context = contexts.get(request);
     if (!context) {
+      const timing = opts.serverTiming === true ? new DownstreamTiming() : undefined;
       context = createContext({
         restBaseUrl: opts.restBaseUrl,
         authorization: request.headers.get('authorization'),
@@ -436,7 +451,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,
         downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
-        onDownstreamCall: opts.onDownstreamCall,
+        onDownstreamCall: timing ? timing.wrap(opts.onDownstreamCall) : opts.onDownstreamCall,
         // `/readyz` builds its own client without one: a prober leaving must
         // not cancel the check other probers share.
         signal: request.signal,
@@ -444,8 +459,15 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         downstreamCache,
       });
       contexts.set(request, context);
+      if (timing) timings.set(context, timing);
     }
     return context;
+  };
+  /** This handling's totals; undefined when no context was built (0 calls sent). */
+  const totalsFor = (request: Request): DownstreamTotals | undefined => {
+    const context = contexts.get(request);
+    if (!context) return undefined;
+    return { calls: context.restClient.stats.total, durationMs: timings.get(context)?.durationMs ?? 0 };
   };
 
   const yoga = createYoga<Record<string, never>, GatewayContext>({
@@ -469,6 +491,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
       queryComplexityPlugin(maxComplexity, 5),
       downstreamCallsPlugin(),
       badUserInputPlugin(),
+      ...(opts.serverTiming === true ? [serverTimingPlugin(totalsFor)] : []),
       // `false` adds no plugin at all, so an opted-out gateway is HEAD byte for byte.
       ...(compressMinBytes === false ? [] : [compressionPlugin(compressMinBytes)]),
     ],
