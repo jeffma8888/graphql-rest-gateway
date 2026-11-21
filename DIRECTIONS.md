@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-111
+    lenses: performance-and-throughput
+    - Candidate A1 -- One `restBaseUrl` rule (row 128): `npm start` and check-backend call the library validator, and keep only their query/fragment add-on
+    - Candidate A2 -- One option-key list: `createGateway`'s known-key table is derived from `OPTION_ENV`, deleting the second `Record<keyof GatewayOptions, …>` copy
+    - Candidate A3 -- Server-Timing reads its duration from the REST client's own stats: delete `DownstreamTiming`, the `timings` WeakMap and the hook-wrapping branch
+    - Candidate B1 -- `downstreamCacheTtlMs` misses are single-flight: a cold burst of 50 SAMPLE queries costs 3 downstream calls, not 150, and so does every burst after a TTL expiry
+    - Candidate B2 -- The TTL cache reuses batched by-key bodies per key: a detail view after the dashboard costs 1 call / about 55 ms instead of 3 calls / 111 ms
+    - Candidate B3 -- `ETag` + `If-None-Match` on GraphQL GET JSON replies: an unchanged repeat poll gets a 304 with 0 body bytes instead of 2082 B (488 B gzip)
+    winner: B1
+    ship: pending (not yet decided)
   iter-110
     lenses: integration-and-adoption, simplification-and-deletion
     - Candidate A1 -- Opt-in `Server-Timing` header (`serverTiming` / `SERVER_TIMING=1`), so browser devtools and APM/RUM agents can see the downstream cost of a GraphQL reply
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One `restBaseUrl` rule: `npm start` and check-backend call the library's URL validator and keep only their query/fragment add-on
     - Candidate B3 -- Delete the hand-kept README test-count and coverage figures, and the `it`s that pin them
     winner: A1
-    ship: pending (not yet decided)
+    ship: PUSHED 2912041
   iter-109
     lenses: integration-and-adoption
     - Candidate A1 -- Load de-flake, round 2: resample test_iter76's 2-hop `< 145` ms bounds alone, and make test_iter80 EB8's CLI `< 5000` ms bound load-robust
@@ -761,4 +771,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-76 scouted iterations
+77 scouted iterations

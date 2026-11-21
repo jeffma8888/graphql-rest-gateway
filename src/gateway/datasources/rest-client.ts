@@ -416,6 +416,14 @@ export class DownstreamCache {
   private readonly entries = new Map<string, CachedBody>();
   /** Bumped by `clear`; a fill started before a clear is dropped (see `filler`). */
   private generation = 0;
+  /**
+   * Misses being filled right now, so concurrent identical misses share one
+   * GET even with `coalesceInFlight` off. WHY replaced (not emptied) by
+   * `clear`: a fill sent before a write may carry pre-write data, so a GET
+   * that starts after the write must never join it; the old registry lives on
+   * only for the waiters it already has.
+   */
+  private fills = new InFlightCalls();
 
   constructor(private readonly ttlMs: number) {}
 
@@ -448,10 +456,16 @@ export class DownstreamCache {
     };
   }
 
-  /** Drops every entry: called when any write is sent and again when it settles. */
+  /** The registry of this generation's in-flight fills (see `fills`). */
+  inFlight(): InFlightCalls {
+    return this.fills;
+  }
+
+  /** Drops every entry and in-flight fill: called when any write is sent and again when it settles. */
   clear(): void {
     this.generation += 1;
     this.entries.clear();
+    this.fills = new InFlightCalls();
   }
 }
 
@@ -586,9 +600,12 @@ export class RestClient {
   async get<T>(path: string, params?: QueryParams, read?: (body: unknown) => T): Promise<T | unknown> {
     this.checkClientPresent(path);
     const reader = read ?? parsedJson;
+    // Without `coalesceInFlight`, a TTL miss still single-flights through the
+    // cache's own per-generation registry, so a cold or expiry burst sends once.
+    const registry = this.coalesce ?? this.cache?.inFlight();
     // After this request wrote, its reads are never answered by a GET another
     // request started (or a body stored) before the write landed (read-your-write).
-    if ((!this.coalesce && !this.cache) || this.wrote) {
+    if (!registry || this.wrote) {
       return this.sendCounted(path, () => this.buildUrl(path, params), GET, reader);
     }
     const url = this.buildUrl(path, params);
@@ -596,13 +613,12 @@ export class RestClient {
     // A hit or a join sends nothing, so it is neither budget-checked, counted nor reported.
     const hit = this.cache?.get(key);
     if (hit) return readBody(path, hit.status, hit.text, reader);
-    const joined = this.coalesce?.join(key);
+    const joined = registry.join(key);
     if (joined) return this.wait(joined, path, joined.result.then((body) => readBody(path, body.status, body.text, reader)));
     const fill = this.cache?.filler(key);
-    if (!this.coalesce) return this.sendCounted(path, () => url, GET, reader, fill);
     this.checkBudget();
     this.track(path);
-    return this.sendShared(this.coalesce, key, url, path, reader, fill);
+    return this.sendShared(registry, key, url, path, reader, fill);
   }
 
   /**
@@ -629,25 +645,23 @@ export class RestClient {
   /**
    * Budget-checks, counts and sends one unshared call, firing the hook once
    * it settles. `url` is a thunk so an invalid base still fails AFTER
-   * `track`, as a counted, reported call. `fill`, when given, stores the
-   * body once it has passed the contract read (a cache miss).
+   * `track`, as a counted, reported call.
    */
   private async sendCounted<T>(
     path: string,
     url: () => URL,
     init: Send,
     read: (body: unknown) => T,
-    fill?: (body: SharedBody) => void,
   ): Promise<T> {
     this.checkBudget();
     this.track(path);
-    if (!this.onCall) return this.send(path, url, init, read, undefined, fill);
+    if (!this.onCall) return this.send(path, url, init, read);
 
     const started = performance.now();
     let status: number | null = null;
     let verdict = OK;
     try {
-      return await this.send(path, url, init, read, (arrived) => (status = arrived), fill);
+      return await this.send(path, url, init, read, (arrived) => (status = arrived));
     } catch (err: unknown) {
       verdict = classify(err);
       throw err;
@@ -740,15 +754,12 @@ export class RestClient {
     init: Send,
     read: (body: unknown) => T,
     onStatus?: (status: number) => void,
-    fill?: (body: SharedBody) => void,
   ): Promise<T> {
     const target = url();
     const { signal, release } = this.callSignal();
     try {
       const body = await this.fetchText(target, path, signal, this.signal, onStatus, init);
-      const value = readBody(path, body.status, body.text, read);
-      fill?.(body);
-      return value;
+      return readBody(path, body.status, body.text, read);
     } finally {
       release();
     }
