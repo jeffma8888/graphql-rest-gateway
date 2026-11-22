@@ -105,8 +105,41 @@ function toRequest(req: IncomingMessage, signal: AbortSignal): Request {
   return new Request(requestUrl(req), init);
 }
 
+/** How long a response may wait for the client to finish sending a body the gateway refused to read. */
+const LINGER_MS = 2000;
+
+/**
+ * Lingering close, as nginx does it: discards whatever is left of a request body the
+ * gateway did not read (a 413 `REQUEST_TOO_LARGE`), until it ends or `LINGER_MS` passes.
+ * WHY: closing a socket while the client is still sending makes the kernel answer with
+ * RST, which can wipe the already-written reply out of the client's receive buffer, so
+ * it sees EPIPE/ECONNRESET instead of the 413. Discarding costs no memory, and
+ * `Readable.toWeb`'s own `data` listener is removed first so nothing is queued.
+ */
+function lingerOnUnreadBody(req: IncomingMessage): Promise<void> {
+  if (req.readableEnded || req.destroyed) return Promise.resolve();
+  req.removeAllListeners('data');
+  req.resume();
+  return new Promise<void>((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      req.off('end', done);
+      req.off('close', done);
+      resolve();
+    };
+    const timer = setTimeout(done, LINGER_MS);
+    req.once('end', done);
+    req.once('close', done);
+  });
+}
+
 /** `connectionClose` is decided at write time, so a response finishing after shutdown began also closes its socket. */
-async function sendResponse(res: ServerResponse, response: Response, connectionClose: boolean): Promise<void> {
+async function sendResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  response: Response,
+  connectionClose: boolean,
+): Promise<void> {
   response.headers.forEach((value, name) => {
     if (name !== 'set-cookie') res.setHeader(name, value);
   });
@@ -117,6 +150,7 @@ async function sendResponse(res: ServerResponse, response: Response, connectionC
   // `new Response(null, { status: 503 })` has statusText ''; let Node supply the standard reason phrase.
   res.writeHead(response.status, response.statusText || undefined);
   if (response.body === null) {
+    await lingerOnUnreadBody(req);
     res.end();
     return;
   }
@@ -129,6 +163,8 @@ async function sendResponse(res: ServerResponse, response: Response, connectionC
     if (!res.write(chunk)) await drainOrClose(res);
   }
   if (res.destroyed) throw new Error('client disconnected mid-response');
+  // The reply is already on the wire (the 413 carries a content-length, so the client can finish reading it).
+  await lingerOnUnreadBody(req);
   res.end();
 }
 
@@ -178,7 +214,7 @@ async function handle(
     return;
   }
   try {
-    await sendResponse(res, await fetch(request), isClosing());
+    await sendResponse(req, res, await fetch(request), isClosing());
   } catch {
     if (res.headersSent) res.destroy();
     else res.writeHead(isClosing() ? 503 : 500, { connection: 'close' }).end();

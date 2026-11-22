@@ -33,6 +33,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   coalesceInFlight: true,
   downstreamCacheTtlMs: true,
   serverTiming: true,
+  maxRequestBytes: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -238,6 +239,18 @@ function assertCompressMinBytes(value: unknown): void {
   }
 }
 
+/**
+ * A positive integer or `false` (off). WHY `0` is rejected rather than read
+ * as "off": a cap of 0 would refuse every POST, and `false` is the one
+ * spelling for off, as for `compressMinBytes`.
+ */
+function assertMaxRequestBytes(value: unknown): void {
+  if (value === undefined || value === false) return;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`maxRequestBytes must be a positive integer or false, got ${describe(value)}`);
+  }
+}
+
 /** WHY strictly boolean: `'false'` or `1` from a JSON or env-derived config would silently opt in. */
 function assertBoolean(key: string, value: unknown): void {
   if (value === undefined || typeof value === 'boolean') return;
@@ -259,4 +272,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertCompressMinBytes(opts.compressMinBytes);
   assertBoolean('coalesceInFlight', opts.coalesceInFlight);
   assertBoolean('serverTiming', opts.serverTiming);
+  assertMaxRequestBytes(opts.maxRequestBytes);
 }

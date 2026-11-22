@@ -139,6 +139,13 @@ function readCompressMinBytes(raw: string | undefined): number | false | undefin
   throw new Error(`COMPRESS_MIN_BYTES must be a non-negative decimal integer or off, got ${JSON.stringify(raw)}`);
 }
 
+/** `off` → `false` (no cap), otherwise the library's positive integer; one spelling for off, as above. */
+function readMaxRequestBytes(raw: string | undefined): number | false | undefined {
+  if (raw === 'off') return false;
+  if (isUnset(raw) || /^\d+$/.test(raw)) return readInt('MAX_REQUEST_BYTES', raw, 1);
+  throw new Error(`MAX_REQUEST_BYTES must be a positive decimal integer or off, got ${JSON.stringify(raw)}`);
+}
+
 /**
  * Which environment variable sets each `GatewayOptions` key, or `null` for a
  * library-only option (a function or an object an env string cannot express).
@@ -161,6 +168,7 @@ export const OPTION_ENV: Record<keyof GatewayOptions, string | null> = {
   coalesceInFlight: 'COALESCE_IN_FLIGHT',
   downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
   serverTiming: 'SERVER_TIMING',
+  maxRequestBytes: 'MAX_REQUEST_BYTES',
 };
 
 interface CliConfig {
@@ -197,6 +205,7 @@ function parseEnv(env: Env): CliConfig {
       coalesceInFlight: readFlag('COALESCE_IN_FLIGHT', env.COALESCE_IN_FLIGHT),
       downstreamCacheTtlMs: readInt('DOWNSTREAM_CACHE_TTL_MS', env.DOWNSTREAM_CACHE_TTL_MS, 1, MAX_TIMEOUT_MS),
       serverTiming: readFlag('SERVER_TIMING', env.SERVER_TIMING),
+      maxRequestBytes: readMaxRequestBytes(env.MAX_REQUEST_BYTES),
     },
   };
 }

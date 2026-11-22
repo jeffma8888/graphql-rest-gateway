@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-114
+    lenses: new-capability, hardening/DX
+    - Candidate A1: Automatic persisted queries (APQ): clients send a 64-hex sha256 instead of the query text, and a CDN-friendly GET fits in 164 chars instead of 710
+    - Candidate A2: Relay refetch: `interface Node` + `Query.node(id)` / `nodes(ids)` resolved through the existing batched by-id loaders (row 49)
+    - Candidate A3: Retry-safe writes: `addReview(..., idempotencyKey: String)` replays the stored review at 0 downstream calls instead of creating a duplicate (row 107)
+    - Candidate B1 -- Request-body byte cap (`maxRequestBytes`, default ON at 1 MiB): an oversized POST gets a typed HTTP 413 before it is buffered or parsed, instead of costing +225 MB RSS and still executing (row 35)
+    - Candidate B2 -- Downstream response byte cap: a 2xx REST body over `maxDownstreamResponseBytes` fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (rows 39 + 54)
+    - Candidate B3 -- The `@requiresScope` gate fails closed at schema build: a directive it cannot enforce (on an interface field, or an empty/blank scope) throws at boot instead of being a silent no-op
+    winner: B1
+    ship: pending (not yet decided)
   iter-113
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §9 Design decisions stops at iter-82: write down the cross-request and HTTP trade-offs shipped since, and add a guard that every opt-in `GatewayOptions` key has a §9 entry
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Scope-gated writes: `addReview` requires the `write` scope, so a read-only token gets a typed `FORBIDDEN` at 0 downstream calls instead of writing
     - Candidate B3 -- Live updates: `Subscription.reviewAdded(bookId: ID!): Review!` over the existing SSE path, fed by every `addReview` this gateway sends
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED cadadda
   iter-112
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Stale-while-revalidate for the shared TTL cache: after expiry, readers get the expired body at 0 waited calls while ONE background fill per key refreshes it (expiry SAMPLE 173.6 ms → about 3 ms)
@@ -791,4 +801,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-79 scouted iterations
+80 scouted iterations

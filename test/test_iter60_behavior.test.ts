@@ -550,7 +550,7 @@ describe('EB11 - FORWARD_HEADERS is validated before anything listens', () => {
 describe('EB12 - README documents forwardHeaders / FORWARD_HEADERS', () => {
   const readme = readFileSync(resolve(root, 'README.md'), 'utf8');
 
-  it('GatewayOptions table lists forwardHeaders and has exactly 14 data rows', () => {
+  it('GatewayOptions table lists forwardHeaders and has exactly 15 data rows', () => {
     const start = readme.indexOf('**`GatewayOptions`**');
     expect(start).toBeGreaterThanOrEqual(0);
     const rest = readme.slice(start);
@@ -562,7 +562,7 @@ describe('EB12 - README documents forwardHeaders / FORWARD_HEADERS', () => {
       table.push(lines[i] ?? '');
     }
     const dataRows = table.slice(1).filter((l) => !/^\|\s*-/.test(l));
-    expect(dataRows).toHaveLength(14); // 9th row: onDownstreamCall (iter-77), 10th: graphqlEndpoint (iter-98), 11th: compressMinBytes (iter-99), 12th: coalesceInFlight (iter-100), 13th: downstreamCacheTtlMs (iter-105), 14th: serverTiming (iter-110)
+    expect(dataRows).toHaveLength(15); // 9th row: onDownstreamCall (iter-77), 10th: graphqlEndpoint (iter-98), 11th: compressMinBytes (iter-99), 12th: coalesceInFlight (iter-100), 13th: downstreamCacheTtlMs (iter-105), 14th: serverTiming (iter-110), 15th: maxRequestBytes (iter-114)
     expect(dataRows.some((l) => l.includes('`forwardHeaders`'))).toBe(true);
   });
 

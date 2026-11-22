@@ -54,7 +54,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 32 | Opt-in HTTP request batching (`maxBatchSize` / `MAX_BATCH_SIZE`): ops in one POST share one loader set + one call budget | done | 65 |
 | 33 | Hostile-document refusal: fixed 2000-token parser cap → `QUERY_TOO_LARGE`; depth/complexity rules run first and short-circuit (7 s stall → ms) | done | 66 |
 | 34 | Relay backward pagination on `Query.authors` (`last`/`before`; 1 call with `before`, ≤2 without) + pages truncated to the clamped size (`first: 0` → empty) | done | 71 |
-| 35 | Request-body byte cap with HTTP 413 (`maxRequestBytes`) | planned | — |
+| 35 | Request-body byte cap: `maxRequestBytes` (default 1 MiB, `false`/`MAX_REQUEST_BYTES=off` = off) → HTTP 413 `REQUEST_TOO_LARGE` at 0 calls before parse (64 MB POST was 200, +225 MB RSS) (iter-114 scout B1) | done | 114 |
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
 | 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s; iter-106 scout A3: 50 × `book(id){id}`×220 = 6.0 s, re-measure after row 118) | planned | — |
 | 38 | `createGateway` validates its whole options object: NaN/0/Infinity limits, `downstreamTimeoutMs` > 2^31-1, bad `restBaseUrl`/`loaderOptions` and unknown keys (did-you-mean) throw | done | 72 |
@@ -156,3 +156,5 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 134 | Stale-while-revalidate for `downstreamCacheTtlMs`: opt-in `downstreamCacheStaleMs` serves an expired entry while ONE background fill refreshes it (expiry SAMPLE 173.6 ms → ~3 ms, calls unchanged 3/window) (iter-112 scout A1) | planned | — |
 | 135 | Scope-gated writes: SDL `@requiresScope(scope: "write")` on `addReview`; `user:9:read`/scope-less token was 1 POST, now `FORBIDDEN` at 0 calls (after `UNAUTHENTICATED`, before `BAD_ARGUMENT`); every Mutation field gated by SDL guard (iter-113 scout B2) | done | 113 |
 | 136 | `Subscription.reviewAdded(bookId)` over Yoga SSE, fed by this process's `addReview` (0 calls to subscribe; today a 200 SSE with an untyped "not configured" error) (iter-113 scout B3) | planned | — |
+| 137 | Opt-in automatic persisted queries (`persistedQueries`): sha256-only POST/GET (body 321 → 127 B, GET URL 710 → 164 chars); register only after the token cap, re-admit depth/complexity every run, bounded LRU (iter-114 scout A1) | planned | — |
+| 138 | `@requiresScope` fails closed at schema build: interface-field placement, blank or `,`/whitespace scope, or an ungated `Mutation` field throws naming `Type.field` (REV iter-113 NIT 1; iter-114 scout B3) | planned | — |

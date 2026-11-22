@@ -28,6 +28,7 @@ import { validateGatewayOptions } from './options.js';
 import { deferAcceptPlugin } from './defer.js';
 import { compressionPlugin } from './compression.js';
 import { DownstreamTiming, serverTimingPlugin, type DownstreamTotals } from './server-timing.js';
+import { DEFAULT_MAX_REQUEST_BYTES, admitRequestBody, requestTooLarge } from './request-size.js';
 
 export interface GatewayOptions {
   restBaseUrl: string;
@@ -119,6 +120,18 @@ export interface GatewayOptions {
    * headers leave before the count is final.
    */
   serverTiming?: boolean;
+  /**
+   * Largest request body, in bytes, that `fetch`/`nodeListener` will read
+   * (default 1048576 = 1 MiB; `false` = off). A body over it is refused with
+   * HTTP 413 `REQUEST_TOO_LARGE` and `connection: close`, before it is parsed
+   * and at 0 downstream calls; a declared `content-length` over it is refused
+   * without reading. WHY default-on: the token and depth/complexity limits
+   * run only after a full buffer and `JSON.parse`, so without it one
+   * anonymous oversized POST costs memory in proportion to its size. Counted
+   * per HTTP request (a whole batch), on wire bytes. `yoga` mounted directly
+   * bypasses it, as it bypasses the drain.
+   */
+  maxRequestBytes?: number | false;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -421,6 +434,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxDepth = opts.maxDepth ?? 10;
   const maxComplexity = opts.maxComplexity ?? 1000;
   const compressMinBytes = opts.compressMinBytes ?? 1024;
+  const maxRequestBytes = opts.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES;
   // One registry per gateway, never module-global: two gateways never share a call.
   const inFlightCalls = opts.coalesceInFlight === true ? new InFlightCalls() : undefined;
   const downstreamCache =
@@ -533,12 +547,20 @@ query Sample {
         inFlight--;
         if (shuttingDown && inFlight === 0 && drainResolve) drainResolve();
       };
-      const result = yoga.fetch(input as any, init as any);
-      if (result instanceof Promise) {
-        return result.finally(done);
+      if (maxRequestBytes === false) {
+        const result = yoga.fetch(input as any, init as any);
+        if (result instanceof Promise) {
+          return result.finally(done);
+        }
+        done();
+        return Promise.resolve(result);
       }
-      done();
-      return Promise.resolve(result);
+      // Inside the in-flight count: close() must wait for a body still being read.
+      return admitRequestBody(input, init, maxRequestBytes)
+        .then((admitted) =>
+          admitted === null ? requestTooLarge(maxRequestBytes) : yoga.fetch(admitted.input as any, admitted.init as any),
+        )
+        .finally(done);
     },
     // WHY one shared drain: a second close() (SIGINT + SIGTERM, afterAll +
     // helper) must not overwrite the first caller's resolver and strand it
