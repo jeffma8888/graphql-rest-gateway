@@ -87,10 +87,12 @@ export type BookOrder =
 export type Mutation = {
   /**
    * Adds a review to the book `bookId` and returns the stored review. Requires an
-   * authenticated caller (a missing or unparseable bearer token is UNAUTHENTICATED);
-   * the caller's user id becomes the reviewer. `rating` must be an integer in 1..5 and
-   * `body` non-empty after trimming, at most 2000 characters; otherwise BAD_ARGUMENT.
-   * Both checks run before any downstream call. Costs exactly 1 downstream call
+   * authenticated caller (a missing or unparseable bearer token is UNAUTHENTICATED)
+   * whose token carries the `write` scope (e.g. `Bearer user:42:read,write`); without
+   * it the request is FORBIDDEN at 0 downstream calls, checked after UNAUTHENTICATED
+   * and before the argument checks. The caller's user id becomes the reviewer.
+   * `rating` must be an integer in 1..5 and `body` non-empty after trimming, at most
+   * 2000 characters; otherwise BAD_ARGUMENT. All checks run before any downstream call. Costs exactly 1 downstream call
    * (`POST /reviews`), never shared with another request's identical write; an unknown
    * book is NOT_FOUND. Afterwards, `Book.reviews` in the same response includes it.
    */
@@ -296,6 +298,12 @@ export type DeferDirectiveArgs = {
 
 export type DeferDirectiveResolver<Result, Parent, ContextType = GatewayContext, Args = DeferDirectiveArgs> = DirectiveResolverFn<Result, Parent, ContextType, Args>;
 
+export type RequiresScopeDirectiveArgs = {
+  scope: Scalars['String']['input'];
+};
+
+export type RequiresScopeDirectiveResolver<Result, Parent, ContextType = GatewayContext, Args = RequiresScopeDirectiveArgs> = DirectiveResolverFn<Result, Parent, ContextType, Args>;
+
 export type AuthorResolvers<ContextType = GatewayContext, ParentType extends ResolversParentTypes['Author'] = ResolversParentTypes['Author']> = ResolversObject<{
   bio?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   books?: Resolver<Array<ResolversTypes['Book']>, ParentType, ContextType, Partial<AuthorBooksArgs>>;
@@ -367,4 +375,5 @@ export type Resolvers<ContextType = GatewayContext> = ResolversObject<{
 
 export type DirectiveResolvers<ContextType = GatewayContext> = ResolversObject<{
   defer?: DeferDirectiveResolver<any, any, ContextType>;
+  requiresScope?: RequiresScopeDirectiveResolver<any, any, ContextType>;
 }>;

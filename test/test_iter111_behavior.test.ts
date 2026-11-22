@@ -344,7 +344,7 @@ describe('EB7: a failed fill is shared and never stored', () => {
 });
 
 const READ = '{ book(id: "a1-b1") { reviews { id } } }';
-const AUTH = { authorization: 'Bearer user:u7:pii' };
+const AUTH = { authorization: 'Bearer user:u7:pii,write' };
 
 describe('EB8: write barrier for other requests', () => {
   it('a read started after a completed write never joins the pre-write fill and lists the new review', async () => {

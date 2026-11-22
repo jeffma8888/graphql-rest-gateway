@@ -114,3 +114,19 @@ export function requireAuth(ctx: GatewayContext): AuthenticatedContext {
   }
   return { ...ctx.auth, userId: ctx.auth.userId };
 }
+
+/**
+ * Guard for a field annotated `@requiresScope(scope: ...)` in the SDL (wired
+ * generically in `schema.ts`, so no resolver names a scope by hand). WHY it
+ * takes an already-authenticated caller: an anonymous request must stay
+ * UNAUTHENTICATED, never FORBIDDEN, so `requireAuth` always runs first. The
+ * match is exact and case-sensitive, like the `pii` check, so `WRITE` or
+ * `writer` never grants `write`.
+ */
+export function requireScope(auth: AuthenticatedContext, scope: string): void {
+  if (!auth.scopes.includes(scope)) {
+    throw new GraphQLError(`Missing required scope: ${scope}`, {
+      extensions: { code: 'FORBIDDEN', requiredScope: scope },
+    });
+  }
+}

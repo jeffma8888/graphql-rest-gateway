@@ -390,7 +390,7 @@ describe('EB7: failures are never cached', () => {
 describe('EB8: writes invalidate', () => {
   const READ = '{ book(id: "a1-b1") { reviews { id } } }';
   const WRITE = 'mutation { addReview(bookId: "a1-b1", rating: 5, body: "Great read") { id } }';
-  const AUTH = { authorization: 'Bearer user:u7:pii' };
+  const AUTH = { authorization: 'Bearer user:u7:pii,write' };
 
   it('read (cached), addReview OK, then the same read sends ≥1 call and lists the new id', async () => {
     await withEnv({ downstreamCacheTtlMs: TTL }, async ({ q }) => {

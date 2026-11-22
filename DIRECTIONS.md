@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-113
+    lenses: narrative-and-docs, new-capability
+    - Candidate A1 -- README §9 Design decisions stops at iter-82: write down the cross-request and HTTP trade-offs shipped since, and add a guard that every opt-in `GatewayOptions` key has a §9 entry
+    - Candidate A2 -- Coverage figures are 11 pp stale and an old test forbids correcting them: re-measure, correct the badge and §8, and re-pin to a checked tolerance
+    - Candidate A3 -- README §8 has no test bullet for 3 shipped options (graphqlEndpoint, compression, coalesceInFlight), and 31 of its 81 test files are named nowhere: backfill and guard
+    - Candidate B1 -- Retry-safe writes: `addReview(..., idempotencyKey: String)` returns the stored review at 0 downstream calls on a retry instead of creating a duplicate
+    - Candidate B2 -- Scope-gated writes: `addReview` requires the `write` scope, so a read-only token gets a typed `FORBIDDEN` at 0 downstream calls instead of writing
+    - Candidate B3 -- Live updates: `Subscription.reviewAdded(bookId: ID!): Review!` over the existing SSE path, fed by every `addReview` this gateway sends
+    winner: B2
+    ship: pending (not yet decided)
   iter-112
     lenses: performance-and-throughput, narrative-and-docs
     - Candidate A1 -- Stale-while-revalidate for the shared TTL cache: after expiry, readers get the expired body at 0 waited calls while ONE background fill per key refreshes it (expiry SAMPLE 173.6 ms → about 3 ms)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- README §6 and §10 tell the cross-request story that iters 100-111 shipped: the architecture map stops saying "one HTTP call per invocation", and §10 stops listing shipped work as future
     - Candidate B3 -- The coverage figures in the badge and §8 are 11 pp stale. Correct them from a measured run, and make `npm run coverage` fail when the README drifts
     winner: B2
-    ship: pending (not yet decided)
+    ship: PUSHED a207f96
   iter-111
     lenses: performance-and-throughput
     - Candidate A1 -- One `restBaseUrl` rule (row 128): `npm start` and check-backend call the library validator, and keep only their query/fragment add-on
@@ -781,4 +791,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-78 scouted iterations
+79 scouted iterations

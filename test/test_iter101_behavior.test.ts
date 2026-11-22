@@ -27,7 +27,7 @@ const sdl = readFileSync(resolve(root, 'schema.graphql'), 'utf8');
 const generated = readFileSync(resolve(root, 'src/generated/graphql.ts'), 'utf8');
 
 const M = 'mutation { addReview(bookId: "a1-b1", rating: 5, body: "Great read") { id rating body reviewer } }';
-const T = { authorization: 'Bearer user:u7:pii' };
+const T = { authorization: 'Bearer user:u7:pii,write' };
 const READ_REVIEWS = '{ book(id: "a1-b1") { reviews { id reviewer } } }';
 
 type Body = { data?: any; errors?: Array<{ message: string; extensions?: Record<string, any> }>; extensions?: any };
@@ -125,7 +125,7 @@ describe.concurrent('iter-101 addReview: resolver paths with call counts', () =>
 
   it('EB3: no-pii caller sees REDACTED; stored reviewer is the caller userId', async () => {
     await withEnv({}, async (env) => {
-      const m = await measured(env, () => post(env.gw, M, { authorization: 'Bearer user:u7:' }));
+      const m = await measured(env, () => post(env.gw, M, { authorization: 'Bearer user:u7:write' }));
       expect(m.value.body.errors).toBeUndefined();
       expect(m.value.body.data.addReview.reviewer).toBe('REDACTED');
       expect(m.value.body.data.addReview.id).toBe('a1-b1-r3');
