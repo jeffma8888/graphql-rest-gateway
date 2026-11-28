@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-117
+    lenses: simplification-and-deletion, performance-and-throughput
+    - A1 -- `maxBatchSize` and `maxDownstreamCalls` use the library's one `assertPositiveInt` rule: delete `validateMaxBatchSize` and the second boot-time `validateMaxDownstreamCalls` call (fresh)
+    - A2 -- One `restBaseUrl` rule: CLI `readRestBaseUrl` calls the library validator and keeps only its `?`/`#` add-on (row 128)
+    - A3 -- One "integer or off" rule: `readCompressMinBytes`/`readMaxRequestBytes` and `assertCompressMinBytes`/`assertMaxRequestBytes` collapse into `readIntOrOff(name, raw, min)` and `assertIntOrFalse(key, value, min)`
+    - Candidate B1 -- Canonical id lists: the 4 batched by-key loaders send their ids sorted, so a reordered id set hits the shared TTL cache and in-flight coalescing (2 calls / 110 ms → 0 calls / ~1.3 ms)
+    - Candidate B2 -- `ETag` + `If-None-Match` → 304 on successful GraphQL GET JSON replies: an unchanged repeat poll costs 0 body bytes instead of 2922 B (600 B gzip) (row 133)
+    - Candidate B3 -- Stale-while-revalidate for `downstreamCacheTtlMs`: opt-in `downstreamCacheStaleMs` serves the expired body while ONE background fill per key refreshes it (expiry spike 181 ms → about 1-3 ms) (row 134)
+    winner: B1
+    ship: pending (not yet decided)
   iter-116
     lenses: integration-and-adoption
     - Candidate A1 -- `npm start` can authenticate for real: an `AUTH_KEYS_FILE` API-key table wired to the shipped `authenticate` seam
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- One `restBaseUrl` rule: `npm start` / check-backend call the library's URL validator and keep only their query/fragment add-on (row 128)
     - Candidate B3 -- One "integer or off" rule: `readCompressMinBytes`/`readMaxRequestBytes` and `assertCompressMinBytes`/`assertMaxRequestBytes` collapse into `readIntOrOff(name, raw, min)` and `assertIntOrFalse(key, value, min)` (fresh)
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 9dbdfd2
   iter-115
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Downstream response byte cap: a REST 2xx body over `maxDownstreamResponseBytes` fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (rows 39 + 54)
@@ -821,4 +831,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-82 scouted iterations
+83 scouted iterations

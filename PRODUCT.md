@@ -56,7 +56,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 34 | Relay backward pagination on `Query.authors` (`last`/`before`; 1 call with `before`, ≤2 without) + pages truncated to the clamped size (`first: 0` → empty) | done | 71 |
 | 35 | Request-body byte cap: `maxRequestBytes` (default 1 MiB, `false`/`MAX_REQUEST_BYTES=off` = off) → HTTP 413 `REQUEST_TOO_LARGE` at 0 calls before parse (64 MB POST was 200, +225 MB RSS) (iter-114 scout B1) | done | 114 |
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
-| 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s; iter-106 scout A3: 50 × `book(id){id}`×220 = 6.0 s, re-measure after row 118) | planned | — |
+| 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` -- superseded by row 118 (iter-117 scout B re-measure: 50 cap-sized docs 26-128 ms, was 6.0 s) | dropped | 117 |
 | 38 | `createGateway` validates its whole options object: NaN/0/Infinity limits, `downstreamTimeoutMs` > 2^31-1, bad `restBaseUrl`/`loaderOptions` and unknown keys (did-you-mean) throw | done | 72 |
 | 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS; iter-115 scout A1: 100 MB +470 MB, reuse `readWithin`) | planned | — |
 | 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
@@ -151,7 +151,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 129 | Single-flight TTL fills: with `downstreamCacheTtlMs` on, concurrent identical misses share one in-flight GET (cold/expiry 50-burst SAMPLE 150 → 3 calls); sender counts, joiners 0; never joins a pre-write fill (iter-111 scout B1) | done | 111 |
 | 130 | One option-key list: `KNOWN_KEYS` derived from `OPTION_ENV` (moved to options.ts, re-exported by cli.ts); deletes the second `Record<keyof GatewayOptions,…>` table (iter-111 scout A2) | planned | — |
 | 131 | Server-Timing `dur` read from `RestClient.settledMs` (delete `DownstreamTiming`, `timings` WeakMap, hook wrap); `dur` must still equal Σ hook `durationMs` exactly (iter-111 scout A3) | done | 116 |
-| 132 | TTL cache stores per-key slices of batched by-key bodies: detail `author(a1){books{reviews}}` after SAMPLE 3 calls → 1; subset/reordered ids 0; subsumes row 119 (iter-111 scout B2) | planned | — |
+| 132 | TTL cache stores per-key slices of batched by-key bodies: detail `author(a1){books{reviews}}` after SAMPLE 3 calls → 1; subset ids 0 (reordered sets: row 145); subsumes row 119 (iter-111 scout B2) | planned | — |
 | 133 | `ETag` + `If-None-Match` → 304 on successful GraphQL GET JSON replies (repeat poll 2082 B / 488 B gzip → 0 body bytes); never on POST/errors/defer (iter-111 scout B3) | planned | — |
 | 134 | Stale-while-revalidate for `downstreamCacheTtlMs`: opt-in `downstreamCacheStaleMs` serves an expired entry while ONE background fill refreshes it (expiry SAMPLE 173.6 ms → ~3 ms, calls unchanged 3/window) (iter-112 scout A1) | planned | — |
 | 135 | Scope-gated writes: SDL `@requiresScope(scope: "write")` on `addReview`; `user:9:read`/scope-less token was 1 POST, now `FORBIDDEN` at 0 calls (after `UNAUTHENTICATED`, before `BAD_ARGUMENT`); every Mutation field gated by SDL guard (iter-113 scout B2) | done | 113 |
@@ -164,3 +164,4 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 142 | `check-schema --against <old.graphql> [--json]`: graphql-js `findBreakingChanges` CI gate (exit 0/1/2) + `AUTH_TIGHTENED` for new `@requiresScope` (iter-115 scout B3) | planned | — |
 | 143 | Async `authenticate` (JWKS fetch): promise-memoised per-Request context, verifier still once per edge request, rejection fails closed (row 139 follow-up) | planned | — |
 | 144 | `npm start` real auth: `AUTH_KEYS_FILE` JSON table of sha256(key) → `{userId, scopes}` builds the sync `authenticate` seam at boot (bad file → exit 2, path/contents never echoed); stub `user:42:read,write` → `UNAUTHENTICATED` at 0 calls (iter-116 scout A1) | planned | — |
+| 145 | Canonical id lists: the 4 batched by-key loaders send distinct ids sorted, so a reordered set hits the TTL cache / in-flight coalescing (`books(ids)` reorder 2 calls → 0; burst Q1,Q2,Q1 4 → 2) (iter-117 scout B1) | done | 117 |

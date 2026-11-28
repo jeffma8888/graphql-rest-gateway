@@ -81,12 +81,21 @@ export function isSendableKey(key: string): boolean {
  * Calls `fetch` with only the sendable keys, and skips the call entirely when
  * none are left, so an all-unsendable batch costs 0 downstream requests.
  * Callers still map results over ALL keys; a filtered key just finds no row.
+ *
+ * The sent ids are distinct and sorted. WHY: the cross-request layers in
+ * rest-client.ts (TTL cache, in-flight coalescing) key on the full URL, and
+ * DataLoader enqueues ids in client/resolver order. A canonical list makes the
+ * same id set one URL in any order. It is safe because every caller maps rows
+ * back by id over the ORIGINAL `keys`, never by position. The dedupe matters
+ * when DataLoader's own cache is off (`cache: false`): it then passes repeated
+ * keys through, and a repeated id would return its rows twice and double the
+ * grouped list fields.
  */
 async function fetchSendable<T>(
   keys: ReadonlyArray<string>,
   fetch: (keys: ReadonlyArray<string>) => Promise<T[]>,
 ): Promise<T[]> {
-  const sendable = keys.filter(isSendableKey);
+  const sendable = [...new Set(keys.filter(isSendableKey))].sort();
   return sendable.length > 0 ? fetch(sendable) : [];
 }
 
