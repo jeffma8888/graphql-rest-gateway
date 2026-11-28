@@ -27,7 +27,7 @@ import { mergedSelectionErrors } from './security/merged-selections.js';
 import { validateGatewayOptions } from './options.js';
 import { deferAcceptPlugin } from './defer.js';
 import { compressionPlugin } from './compression.js';
-import { DownstreamTiming, serverTimingPlugin, type DownstreamTotals } from './server-timing.js';
+import { serverTimingPlugin, type DownstreamTotals } from './server-timing.js';
 import { DEFAULT_MAX_REQUEST_BYTES, admitRequestBody, requestTooLarge } from './request-size.js';
 
 export interface GatewayOptions {
@@ -466,12 +466,9 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   // `Request`. Keying on it makes a batch share one RestClient/loader set/
   // budget, while a new edge HTTP request (a new Request) never reuses one.
   const contexts = new WeakMap<Request, GatewayContext>();
-  // Only filled under `serverTiming`, so an opted-out gateway keeps HEAD's hook-free fast path.
-  const timings = new WeakMap<GatewayContext, DownstreamTiming>();
   const contextFor = (request: Request): GatewayContext => {
     let context = contexts.get(request);
     if (!context) {
-      const timing = opts.serverTiming === true ? new DownstreamTiming() : undefined;
       context = createContext({
         restBaseUrl: opts.restBaseUrl,
         authorization: request.headers.get('authorization'),
@@ -480,7 +477,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,
         downstreamHeaders: pickHeaders(request.headers, forwardHeaders),
-        onDownstreamCall: timing ? timing.wrap(opts.onDownstreamCall) : opts.onDownstreamCall,
+        onDownstreamCall: opts.onDownstreamCall,
         // `/readyz` builds its own client without one: a prober leaving must
         // not cancel the check other probers share.
         signal: request.signal,
@@ -488,7 +485,6 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
         downstreamCache,
       });
       contexts.set(request, context);
-      if (timing) timings.set(context, timing);
     }
     return context;
   };
@@ -496,7 +492,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   const totalsFor = (request: Request): DownstreamTotals | undefined => {
     const context = contexts.get(request);
     if (!context) return undefined;
-    return { calls: context.restClient.stats.total, durationMs: timings.get(context)?.durationMs ?? 0 };
+    return { calls: context.restClient.stats.total, durationMs: context.restClient.settledMs };
   };
 
   const yoga = createYoga<Record<string, never>, GatewayContext>({

@@ -479,6 +479,8 @@ const GET: Send = { method: 'GET' };
 
 export class RestClient {
   readonly stats: RestClientStats = { total: 0, byPath: {} };
+  /** Behind {@link settledMs}; private so only a settling sent call moves it. */
+  private settledTotalMs = 0;
   /** Set by the first `post`; from then on this request's GETs are never coalesced nor cached. */
   private wrote = false;
   /** Per-request deadline in milliseconds for every downstream call. */
@@ -499,7 +501,8 @@ export class RestClient {
    *   list, prefetch, write -- funnels through `get` or `post`, so none can forget them, and the
    *   client is per request, so one caller's credential never reaches another's.
    * @param onCall Operator hook fired once per *sent* call after it settles
-   *   (see {@link DownstreamCallEvent}). WHY here: `get`/`post` are the one place every
+   *   (see {@link DownstreamCallEvent}), passed the same `durationMs` that
+   *   {@link settledMs} adds. WHY here: `get`/`post` are the one place every
    *   counted call passes, so once every sent call has settled, events equal
    *   `stats.total` (a call still in flight when the response is sent -- an
    *   orphaned prefetch or an error-orphaned NAIVE sibling -- fires later).
@@ -525,6 +528,26 @@ export class RestClient {
   ) {
     validateMaxDownstreamCalls(maxCalls);
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  }
+
+  /**
+   * Sum of this client's settled *sent* calls' `durationMs` (backend time, not
+   * wall-clock). WHY here: every sent call settles in `sendCounted`/`sendShared`,
+   * so `Server-Timing` reads exactly what the hook events carry, hook or not.
+   */
+  get settledMs(): number {
+    return this.settledTotalMs;
+  }
+
+  /**
+   * Adds one sent call's duration to {@link settledMs}, then reports it to the
+   * operator's hook (if any). WHY one function: the header and the event must
+   * be fed the same computed value, never two `performance.now()` reads.
+   */
+  private settle(route: string, status: number | null, started: number, verdict: Verdict): void {
+    const durationMs = performance.now() - started;
+    this.settledTotalMs += durationMs;
+    if (this.onCall) emit(this.onCall, { route, status, durationMs, ...verdict });
   }
 
   /**
@@ -643,8 +666,8 @@ export class RestClient {
   }
 
   /**
-   * Budget-checks, counts and sends one unshared call, firing the hook once
-   * it settles. `url` is a thunk so an invalid base still fails AFTER
+   * Budget-checks, counts and sends one unshared call, timing it and firing
+   * the hook once it settles. `url` is a thunk so an invalid base still fails AFTER
    * `track`, as a counted, reported call.
    */
   private async sendCounted<T>(
@@ -655,8 +678,6 @@ export class RestClient {
   ): Promise<T> {
     this.checkBudget();
     this.track(path);
-    if (!this.onCall) return this.send(path, url, init, read);
-
     const started = performance.now();
     let status: number | null = null;
     let verdict = OK;
@@ -666,7 +687,7 @@ export class RestClient {
       verdict = classify(err);
       throw err;
     } finally {
-      emit(this.onCall, { route: path, status, durationMs: performance.now() - started, ...verdict });
+      this.settle(path, status, started, verdict);
     }
   }
 
@@ -693,10 +714,11 @@ export class RestClient {
   }
 
   /**
-   * Sends one counted GET that concurrent identical GETs may join. The hook
-   * fires when the shared fetch settles, not when this request stops waiting:
-   * the call was sent either way, and if another waiter is still served, the
-   * event reports that outcome (an `ok` stays `ok` after this caller left).
+   * Sends one counted GET that concurrent identical GETs may join; only the
+   * sender's client times it (a joiner sent nothing). It settles when the
+   * shared fetch does, not when this request stops waiting: the call was sent
+   * either way, and if another waiter is still served, the event reports that
+   * outcome (an `ok` stays `ok` after this caller left).
    */
   private sendShared<T>(
     registry: InFlightCalls,
@@ -716,12 +738,10 @@ export class RestClient {
       fill?.(body);
       return value;
     });
-    if (this.onCall) {
-      const hook = this.onCall;
-      const report = (verdict: Verdict): void =>
-        emit(hook, { route: path, status: call.status, durationMs: performance.now() - started, ...verdict });
-      parsed.then(() => report(OK), (err: unknown) => report(classify(err)));
-    }
+    parsed.then(
+      () => this.settle(path, call.status, started, OK),
+      (err: unknown) => this.settle(path, call.status, started, classify(err)),
+    );
     return this.wait(call, path, parsed);
   }
 
@@ -805,8 +825,10 @@ export class RestClient {
     return { method: init.method, headers: { ...this.headers, 'content-type': 'application/json' }, body: init.body };
   }
 
+  /** Zeros the call counters and {@link settledMs} together. */
   resetStats(): void {
     this.stats.total = 0;
     this.stats.byPath = {};
+    this.settledTotalMs = 0;
   }
 }

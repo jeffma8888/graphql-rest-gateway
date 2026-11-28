@@ -1,5 +1,4 @@
 import type { Plugin } from 'graphql-yoga';
-import type { DownstreamCallEvent, DownstreamCallHook } from './datasources/rest-client.js';
 import { JSON_CONTENT_TYPE } from './compression.js';
 
 /**
@@ -15,29 +14,8 @@ import { JSON_CONTENT_TYPE } from './compression.js';
 export interface DownstreamTotals {
   /** Calls sent (the same counter as `extensions.downstreamCalls.total`). */
   calls: number;
-  /** Sum of the settled calls' `durationMs`: total backend time, not wall-clock. */
+  /** `RestClient.settledMs`: the settled calls' `durationMs` sum, total backend time, not wall-clock. */
   durationMs: number;
-}
-
-/**
- * Per-request accumulator of settled call durations. WHY fed by the hook
- * events: `dur` then equals the sum the operator's `onDownstreamCall` sees,
- * exactly, with no second clock in the REST client.
- */
-export class DownstreamTiming {
-  durationMs = 0;
-
-  /**
-   * The hook to give the request's `RestClient`: records the duration, then
-   * calls the operator's own hook (if any), returning its result so a
-   * rejected promise is still swallowed by the client's `emit`.
-   */
-  wrap(hook: DownstreamCallHook | undefined): DownstreamCallHook {
-    return (event: DownstreamCallEvent) => {
-      this.durationMs += event.durationMs;
-      return hook?.(event);
-    };
-  }
 }
 
 /** `downstream;dur=<ms, 1 decimal>;desc="<N> call(s)"`. */

@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-116
+    lenses: integration-and-adoption
+    - Candidate A1 -- `npm start` can authenticate for real: an `AUTH_KEYS_FILE` API-key table wired to the shipped `authenticate` seam
+    - Candidate A2 -- Auth refusals speak HTTP: 401 / 403 with RFC 6750 `WWW-Authenticate` (row 141)
+    - Candidate A3 -- `check-schema --against <old.graphql> [--json]`: a breaking-change CI gate (row 142)
+    - Candidate B1 -- Server-Timing reads `dur` from the REST client's own per-request sum: delete `DownstreamTiming`, the `timings` WeakMap and the hook-wrapping branch (row 131)
+    - Candidate B2 -- One `restBaseUrl` rule: `npm start` / check-backend call the library's URL validator and keep only their query/fragment add-on (row 128)
+    - Candidate B3 -- One "integer or off" rule: `readCompressMinBytes`/`readMaxRequestBytes` and `assertCompressMinBytes`/`assertMaxRequestBytes` collapse into `readIntOrOff(name, raw, min)` and `assertIntOrFalse(key, value, min)` (fresh)
+    winner: B1
+    ship: pending (not yet decided)
   iter-115
     lenses: hardening/DX, integration-and-adoption
     - Candidate A1 -- Downstream response byte cap: a REST 2xx body over `maxDownstreamResponseBytes` fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (rows 39 + 54)
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Auth refusals speak HTTP: `UNAUTHENTICATED` → 401 and `FORBIDDEN` → 403 with an RFC 6750 `WWW-Authenticate: Bearer error="insufficient_scope", scope="write"` header
     - Candidate B3 -- `npm run check-schema -- --against <old.graphql> [--json]`: a CI gate that tells a gateway owner, before deploy, that an SDL edit breaks clients already moved over
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 0477655
   iter-114
     lenses: new-capability, hardening/DX
     - Candidate A1: Automatic persisted queries (APQ): clients send a 64-hex sha256 instead of the query text, and a CDN-friendly GET fits in 164 chars instead of 710
@@ -811,4 +821,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-81 scouted iterations
+82 scouted iterations
