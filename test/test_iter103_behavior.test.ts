@@ -305,6 +305,7 @@ const EXPECTED_MAP: Record<keyof GatewayOptions, string | null> = {
   downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
   serverTiming: 'SERVER_TIMING',
   maxRequestBytes: 'MAX_REQUEST_BYTES',
+  authenticate: null,
 };
 
 describe('EB9: OPTION_ENV is exported and typed Record<keyof GatewayOptions, string | null>', () => {
@@ -313,14 +314,14 @@ describe('EB9: OPTION_ENV is exported and typed Record<keyof GatewayOptions, str
     const typed: Record<keyof GatewayOptions, string | null> = OPTION_ENV;
     expect(typed).toBe(OPTION_ENV);
   });
-  it('maps the 13 env-reachable options to their variables and nulls exactly loaderOptions / onDownstreamCall', () => {
+  it('maps the 13 env-reachable options to their variables and nulls exactly loaderOptions / onDownstreamCall / authenticate', () => {
     expect({ ...OPTION_ENV }).toEqual(EXPECTED_MAP);
     expect(Object.keys(OPTION_ENV).sort()).toEqual(Object.keys(EXPECTED_MAP).sort());
     const nulls = Object.entries(OPTION_ENV)
       .filter(([, v]) => v === null)
       .map(([k]) => k)
       .sort();
-    expect(nulls).toEqual(['loaderOptions', 'onDownstreamCall']);
+    expect(nulls).toEqual(['authenticate', 'loaderOptions', 'onDownstreamCall']);
   });
 });
 
@@ -400,8 +401,8 @@ describe('EB11: README env table rows and library-only sentence', () => {
     expect(sentence).toBeDefined();
     expect(sentence).toMatch(/library-only/);
   });
-  it('the GatewayOptions options table keeps exactly 15 data rows', () => {
-    expect(optionRows()).toHaveLength(15);
+  it('the GatewayOptions options table keeps exactly 16 data rows', () => {
+    expect(optionRows()).toHaveLength(16);
   });
 });
 

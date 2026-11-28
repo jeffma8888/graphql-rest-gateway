@@ -169,6 +169,7 @@ export const OPTION_ENV: Record<keyof GatewayOptions, string | null> = {
   downstreamCacheTtlMs: 'DOWNSTREAM_CACHE_TTL_MS',
   serverTiming: 'SERVER_TIMING',
   maxRequestBytes: 'MAX_REQUEST_BYTES',
+  authenticate: null,
 };
 
 interface CliConfig {
@@ -177,7 +178,7 @@ interface CliConfig {
   externalBaseUrl: string | undefined;
   /** Only meaningful (and only validated) in bundled mode. */
   restLatencyMs: number;
-  limits: Omit<GatewayOptions, 'restBaseUrl' | 'loaderOptions' | 'onDownstreamCall'>;
+  limits: Omit<GatewayOptions, 'restBaseUrl' | 'loaderOptions' | 'onDownstreamCall' | 'authenticate'>;
 }
 
 /** Validates every variable up front so a bad value never leaves a half-started process. */

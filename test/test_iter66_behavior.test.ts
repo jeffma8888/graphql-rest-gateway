@@ -341,7 +341,7 @@ describe('EB11 - fixed and independent of the other limits', () => {
     expect(s.calls).toBe(0);
   });
 
-  it('no new GatewayOptions row / env var: README options table has exactly 15 rows (onDownstreamCall added at iter-77, graphqlEndpoint at iter-98, compressMinBytes at iter-99, coalesceInFlight at iter-100, downstreamCacheTtlMs at iter-105, serverTiming at iter-110, maxRequestBytes at iter-114), none token-related', () => {
+  it('no new GatewayOptions row / env var: README options table has exactly 16 rows (onDownstreamCall added at iter-77, graphqlEndpoint at iter-98, compressMinBytes at iter-99, coalesceInFlight at iter-100, downstreamCacheTtlMs at iter-105, serverTiming at iter-110, maxRequestBytes at iter-114, authenticate at iter-115), none token-related', () => {
     const start = README.indexOf('**`GatewayOptions`**');
     expect(start).toBeGreaterThan(-1);
     const end = README.indexOf('**`BackendOptions`**', start);
@@ -349,7 +349,7 @@ describe('EB11 - fixed and independent of the other limits', () => {
     const rows = README.slice(start, end)
       .split('\n')
       .filter((l) => /^\| `[A-Za-z]+` \|/.test(l));
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(16);
     expect(rows.join('\n')).not.toMatch(/token/i);
     expect(README).not.toMatch(/MAX_TOKENS/);
   });

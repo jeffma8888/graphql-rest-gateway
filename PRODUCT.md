@@ -58,7 +58,7 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 36 | `npm run check-backend`: REST-contract pre-flight for `REST_BASE_URL` (5 routes, PASS/FAIL per field, exit 0/1/2, `--json`) | done | 67 |
 | 37 | Token cap budgeted per edge HTTP request under `maxBatchSize` (200 cap-sized batched docs stall 6.5 s; iter-106 scout A3: 50 × `book(id){id}`×220 = 6.0 s, re-measure after row 118) | planned | — |
 | 38 | `createGateway` validates its whole options object: NaN/0/Infinity limits, `downstreamTimeoutMs` > 2^31-1, bad `restBaseUrl`/`loaderOptions` and unknown keys (did-you-mean) throw | done | 72 |
-| 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS) | planned | — |
+| 39 | Downstream response byte cap → typed `DOWNSTREAM_RESPONSE_TOO_LARGE` (200 MB body = +704 MB RSS; iter-115 scout A1: 100 MB +470 MB, reuse `readWithin`) | planned | — |
 | 40 | Fragment spreads walked once per document: one memoised cost+depth walk ends the 2^n repeated-spread validation stall | done | 68 |
 | 41 | `npm start` opt-in pre-flight (`PREFLIGHT=warn\|fail`) runs check-backend before listening | planned | — |
 | 42 | `check-backend` checks authenticated backends (`--header`) and honours `DOWNSTREAM_TIMEOUT_MS` with per-route latency | planned | — |
@@ -158,3 +158,8 @@ Backend engineers migrating REST estates to a graph who need batching, paginatio
 | 136 | `Subscription.reviewAdded(bookId)` over Yoga SSE, fed by this process's `addReview` (0 calls to subscribe; today a 200 SSE with an untyped "not configured" error) (iter-113 scout B3) | planned | — |
 | 137 | Opt-in automatic persisted queries (`persistedQueries`): sha256-only POST/GET (body 321 → 127 B, GET URL 710 → 164 chars); register only after the token cap, re-admit depth/complexity every run, bounded LRU (iter-114 scout A1) | planned | — |
 | 138 | `@requiresScope` fails closed at schema build: interface-field placement, blank or `,`/whitespace scope, or an ungated `Mutation` field throws naming `Type.field` (REV iter-113 NIT 1; iter-114 scout B3) | planned | — |
+| 139 | Pluggable edge auth: sync `createGateway({ authenticate })` (`(request) => AuthContext \| null`) replaces stub `parseAuth`; throw/malformed/Promise fail closed; 1 call per edge request (iter-115 scout B1) | done | 115 |
+| 140 | iter-114 413 follow-ups: `REQUEST_TOO_LARGE` carries Yoga's CORS headers (browser sees the typed code) and an aborted `gw.fetch` stops reading the body at once (REV iter-114 NITs 1-2; iter-115 scout A2) | planned | — |
+| 141 | Auth refusals speak HTTP: `UNAUTHENTICATED` → 401 + `WWW-Authenticate: Bearer`, `FORBIDDEN` → 403 `error="insufficient_scope", scope="write"` via `extensions.http` (iter-115 scout B2) | planned | — |
+| 142 | `check-schema --against <old.graphql> [--json]`: graphql-js `findBreakingChanges` CI gate (exit 0/1/2) + `AUTH_TIGHTENED` for new `@requiresScope` (iter-115 scout B3) | planned | — |
+| 143 | Async `authenticate` (JWKS fetch): promise-memoised per-Request context, verifier still once per edge request, rejection fails closed (row 139 follow-up) | planned | — |

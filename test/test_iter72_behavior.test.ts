@@ -50,6 +50,7 @@ const KNOWN = [
   'downstreamCacheTtlMs',
   'serverTiming',
   'maxRequestBytes',
+  'authenticate',
 ] as const;
 
 const AUTHOR_Q = '{ author(id:"a1"){ id name } }';
@@ -502,7 +503,7 @@ describe('EB13 - README Options table', () => {
     expect(prose).toMatch(/maxComplexity`?\s*1000/);
   });
 
-  it('the README table lists exactly the fifteen known keys', () => {
+  it('the README table lists exactly the sixteen known keys', () => {
     expect(optionsTableKeys(optionsBlock()).sort()).toEqual([...KNOWN].sort());
   });
 });
@@ -524,13 +525,14 @@ const VALID: Record<string, unknown> = {
   downstreamCacheTtlMs: 60000,
   serverTiming: true,
   maxRequestBytes: 1048576,
+  authenticate: () => null,
 };
 
 describe('Drift guard - README GatewayOptions table vs validator', () => {
   const keys = optionsTableKeys(README.slice(README.indexOf('**`GatewayOptions`**'), README.indexOf('**`BackendOptions`**')));
 
   it('the table is non-empty and every row has a known valid value', () => {
-    expect(keys.length).toBe(15);
+    expect(keys.length).toBe(16);
     for (const k of keys) expect(VALID).toHaveProperty(k);
   });
 

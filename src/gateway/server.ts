@@ -2,7 +2,7 @@ import type { RequestListener } from 'node:http';
 import { createYoga, isAsyncIterable, type YogaServerInstance, type Plugin } from 'graphql-yoga';
 import { getOperationAST, validate, GraphQLError, type DocumentNode, type ExecutionResult } from 'graphql';
 import { schema } from './schema.js';
-import { createContext, type GatewayContext } from './context.js';
+import { createContext, verifyAuth, type Authenticate, type GatewayContext } from './context.js';
 import {
   RestClient,
   InFlightCalls,
@@ -132,6 +132,18 @@ export interface GatewayOptions {
    * bypasses it, as it bypasses the drain.
    */
   maxRequestBytes?: number | false;
+  /**
+   * Library-only edge verifier, called synchronously at most once per GraphQL
+   * edge HTTP request (a batch shares one call; a request refused at parse or
+   * validation never calls it) with that `Request`, in place
+   * of the stub `Bearer user:<id>:<scopes>` parser. Its `AuthContext` drives
+   * the shipped `UNAUTHENTICATED`, `@requiresScope` and `pii` gates; `null`
+   * means anonymous. It FAILS CLOSED: a throw (its message never reaches a
+   * response), a Promise or a malformed result is treated as anonymous. WHY
+   * sync: async/JWKS verification needs a promise-memoised context and is a
+   * later slice. Never called for `/healthz`, `/readyz` or a 413.
+   */
+  authenticate?: Authenticate;
 }
 
 type YogaInstance = YogaServerInstance<Record<string, never>, GatewayContext>;
@@ -435,6 +447,8 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
   const maxComplexity = opts.maxComplexity ?? 1000;
   const compressMinBytes = opts.compressMinBytes ?? 1024;
   const maxRequestBytes = opts.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES;
+  // Captured once: clearing the caller's field later must not fail open back to the stub parser.
+  const authenticate = opts.authenticate;
   // One registry per gateway, never module-global: two gateways never share a call.
   const inFlightCalls = opts.coalesceInFlight === true ? new InFlightCalls() : undefined;
   const downstreamCache =
@@ -461,6 +475,7 @@ export function createGateway(opts: GatewayOptions): GatewayServer {
       context = createContext({
         restBaseUrl: opts.restBaseUrl,
         authorization: request.headers.get('authorization'),
+        auth: authenticate ? verifyAuth(authenticate, request) : undefined,
         loaderOptions: opts.loaderOptions,
         downstreamTimeoutMs: opts.downstreamTimeoutMs,
         maxDownstreamCalls: opts.maxDownstreamCalls,

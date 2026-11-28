@@ -1,6 +1,16 @@
 # Foundry directions
 
 foundry directions -- graphql-rest-gateway
+  iter-115
+    lenses: hardening/DX, integration-and-adoption
+    - Candidate A1 -- Downstream response byte cap: a REST 2xx body over `maxDownstreamResponseBytes` fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (rows 39 + 54)
+    - Candidate A2 -- The 413 `REQUEST_TOO_LARGE` that shipped in iter-114 becomes readable by a browser (CORS headers like any 200), and an aborted `gw.fetch` stops reading the body at once (REV iter-114 NITs 1-2)
+    - Candidate A3 -- `@requiresScope` fails closed at schema build: a directive it cannot enforce (interface-field placement, a blank, comma- or space-padded scope) throws at boot naming `Type.field` instead of being a silent no-op (row 138)
+    - Candidate B1 -- Pluggable edge auth: `createGateway({ authenticate })` lets an embedder's real token verification drive the shipped `UNAUTHENTICATED` / `@requiresScope` / `pii` gates
+    - Candidate B2 -- Auth refusals speak HTTP: `UNAUTHENTICATED` → 401 and `FORBIDDEN` → 403 with an RFC 6750 `WWW-Authenticate: Bearer error="insufficient_scope", scope="write"` header
+    - Candidate B3 -- `npm run check-schema -- --against <old.graphql> [--json]`: a CI gate that tells a gateway owner, before deploy, that an SDL edit breaks clients already moved over
+    winner: B1
+    ship: pending (not yet decided)
   iter-114
     lenses: new-capability, hardening/DX
     - Candidate A1: Automatic persisted queries (APQ): clients send a 64-hex sha256 instead of the query text, and a CDN-friendly GET fits in 164 chars instead of 710
@@ -10,7 +20,7 @@ foundry directions -- graphql-rest-gateway
     - Candidate B2 -- Downstream response byte cap: a 2xx REST body over `maxDownstreamResponseBytes` fails fast as typed `DOWNSTREAM_RESPONSE_TOO_LARGE` instead of being buffered whole (rows 39 + 54)
     - Candidate B3 -- The `@requiresScope` gate fails closed at schema build: a directive it cannot enforce (on an interface field, or an empty/blank scope) throws at boot instead of being a silent no-op
     winner: B1
-    ship: pending (not yet decided)
+    ship: PUSHED 58778ee
   iter-113
     lenses: narrative-and-docs, new-capability
     - Candidate A1 -- README §9 Design decisions stops at iter-82: write down the cross-request and HTTP trade-offs shipped since, and add a guard that every opt-in `GatewayOptions` key has a §9 entry
@@ -801,4 +811,4 @@ foundry directions -- graphql-rest-gateway
     - Candidate B3 — GraphQL config file for schema discovery by editor tooling and client codegen
     winner: B1
     ship: REVERTED
-80 scouted iterations
+81 scouted iterations

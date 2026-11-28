@@ -30,6 +30,12 @@ export interface CreateContextOptions {
   /** Inject a pre-built client (tests/benchmark read its stats afterwards). */
   restClient?: RestClient;
   authorization?: string | null;
+  /**
+   * A caller identity already established at the edge (`createGateway`'s
+   * `authenticate` verifier). When set it is used as-is and `authorization`
+   * is not parsed; unset = the stub {@link parseAuth} reads `authorization`.
+   */
+  auth?: AuthContext;
   loaderOptions?: LoaderOptions;
   /** Downstream REST call timeout in ms; forwarded to RestClient. */
   downstreamTimeoutMs?: number;
@@ -79,6 +85,65 @@ export function parseAuth(authorization?: string | null): AuthContext {
   return { userId: null, scopes: [] };
 }
 
+/**
+ * An embedder-supplied edge verifier (`createGateway({ authenticate })`).
+ * WHY sync: the context factory is memoised per Request synchronously, so a
+ * Promise return fails closed rather than racing the first operation.
+ */
+export type Authenticate = (request: Request) => AuthContext | null;
+
+/** Signed-out caller; a fresh object each time so no request can mutate another's. */
+function anonymous(): AuthContext {
+  return { userId: null, scopes: [] };
+}
+
+/**
+ * `userId` is a non-empty string or null; `scopes` is an array of strings only.
+ * Each field is read ONCE and the validated snapshot is returned, so a getter
+ * or Proxy cannot pass the check with one value and hand back another.
+ */
+function snapshotAuth(value: unknown): AuthContext | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { userId, scopes } = value as Record<string, unknown>;
+  if (!(userId === null || (typeof userId === 'string' && userId !== ''))) return null;
+  if (!Array.isArray(scopes)) return null;
+  const copy: unknown[] = Array.from(scopes as unknown[]);
+  if (!copy.every((scope) => typeof scope === 'string')) return null;
+  return { userId, scopes: copy as string[] };
+}
+
+/**
+ * Runs the verifier once and FAILS CLOSED: a throw, a thenable or a malformed
+ * result becomes the anonymous caller, so the `UNAUTHENTICATED`/
+ * `@requiresScope`/`pii` gates refuse it at 0 downstream calls. WHY the throw
+ * is swallowed rather than surfaced: its message may carry key or JWKS
+ * detail, which must never reach a response body. A thenable gets a no-op
+ * rejection handler so an async verifier never raises `unhandledRejection`.
+ * A valid result is copied (`scopes` snapshotted) so the verifier cannot mutate
+ * a live request's identity afterwards.
+ */
+export function verifyAuth(authenticate: Authenticate, request: Request): AuthContext {
+  // One try covers the shape checks too: a hostile getter or Proxy result fails closed as well.
+  try {
+    const result: unknown = authenticate(request);
+    if (isThenable(result)) {
+      Promise.resolve(result).catch(() => undefined);
+      return anonymous();
+    }
+    return snapshotAuth(result) ?? anonymous();
+  } catch {
+    return anonymous();
+  }
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
 export function createContext(opts: CreateContextOptions): GatewayContext {
   const loaderOptions = opts.loaderOptions ?? BATCHED;
   const restClient =
@@ -96,7 +161,7 @@ export function createContext(opts: CreateContextOptions): GatewayContext {
   const datasources = buildDataSources(restClient);
   const loaders = buildLoaders(datasources, loaderOptions);
   const services = buildServices(datasources, loaders, loaderOptions.cache);
-  const auth = parseAuth(opts.authorization);
+  const auth = opts.auth ?? parseAuth(opts.authorization);
   return { auth, services, loaders, datasources, restClient };
 }
 

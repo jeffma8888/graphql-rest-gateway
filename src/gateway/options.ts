@@ -34,6 +34,7 @@ const KNOWN_KEY_SET: Record<keyof GatewayOptions, true> = {
   downstreamCacheTtlMs: true,
   serverTiming: true,
   maxRequestBytes: true,
+  authenticate: true,
 };
 const KNOWN_KEYS: readonly string[] = Object.keys(KNOWN_KEY_SET);
 
@@ -273,4 +274,5 @@ export function validateGatewayOptions(opts: unknown): asserts opts is GatewayOp
   assertBoolean('coalesceInFlight', opts.coalesceInFlight);
   assertBoolean('serverTiming', opts.serverTiming);
   assertMaxRequestBytes(opts.maxRequestBytes);
+  assertFunction('authenticate', opts.authenticate);
 }
